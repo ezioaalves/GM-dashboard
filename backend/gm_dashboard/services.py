@@ -175,7 +175,10 @@ def session_note_context(vault: Path | None = None) -> dict[str, Any]:
         latest = None
 
     live_prep_path = root / LIVE_PREP
-    live_prep_excerpt = live_prep_path.read_text()[:2000] if live_prep_path.exists() else ""
+    try:
+        live_prep_excerpt = live_prep_path.read_text()[:2000] if live_prep_path.exists() else ""
+    except Exception:
+        live_prep_excerpt = ""
 
     threads_dir = root / "Campaign Management" / "authorial" / "threads"
     active_threads: list[dict[str, str]] = []
@@ -429,12 +432,13 @@ def draft_session_note(
     _questions = unresolved_questions or []
 
     title = _derive_title_structured(next_session_hook, _scenes, memory) or f"Session {session_no} Draft"
+    safe_title = title.replace('"', '\\"')
 
     markdown = f"""---
 schema_version: 1
 session: {session_no}
 date: {today}
-title: "{title}"
+title: "{safe_title}"
 poles_advanced: []
 threads:
   advanced: []

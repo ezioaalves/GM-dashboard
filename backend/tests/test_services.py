@@ -288,3 +288,14 @@ def test_draft_session_note_title_falls_back_to_first_scene(tmp_path):
         scenes=["Forest escape"],
     )
     assert "forest-escape" in draft["default_target_path"]
+
+
+def test_draft_session_note_title_with_quotes_produces_valid_yaml(tmp_path):
+    seed_vault(tmp_path)
+    draft = services.draft_session_note(
+        "",
+        tmp_path,
+        next_session_hook='"Dawn" in the forest',
+    )
+    fm, _ = services.split_frontmatter(draft["markdown"], Path("test"))
+    assert "Dawn" in fm["title"]
