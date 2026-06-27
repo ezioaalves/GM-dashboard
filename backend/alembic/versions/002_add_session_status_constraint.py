@@ -17,15 +17,11 @@ depends_on = None
 
 
 def upgrade():
-    # Add CHECK constraint to the status column in sessions table
-    op.execute(
-        sa.text(
-            "ALTER TABLE sessions ADD CONSTRAINT sessions_status_check "
-            "CHECK (status IN ('Planned', 'Active', 'Played'))"
-        )
-    )
+    # CHECK constraint already defined in baseline schema.sql
+    # This migration is a placeholder for future session-related changes
+    pass
 
 
 def downgrade():
-    # Drop the CHECK constraint
-    op.execute(sa.text("ALTER TABLE sessions DROP CONSTRAINT sessions_status_check"))
+    # No operations to downgrade
+    pass
