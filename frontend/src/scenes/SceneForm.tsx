@@ -1,6 +1,54 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChevronDown, Plus, Save, Trash, X, Search, Eye } from "lucide-react";
 import CustomSelect from "../components/CustomSelect";
+import { useCreateScene, usePatchScene, useDeleteScene } from "../api/scenes";
+import type { Scene, SceneCreate } from "../types/scene";
+
+// ── Internal types ─────────────────────────────────────────────────────────────
+
+interface Session {
+  id: number;
+  number: number;
+  name?: string | null;
+}
+
+interface PinItem {
+  title: string;
+  path: string;
+}
+
+interface SearchResult {
+  title: string;
+  path: string;
+  snippet: string;
+}
+
+interface SceneDraftResponse {
+  id: number;
+  path: string;
+  markdown: string;
+  default_target_path: string;
+}
+
+interface SceneSavePreview {
+  path: string;
+  diff: string;
+}
+
+// ── Component props ────────────────────────────────────────────────────────────
+
+interface SceneFormProps {
+  scene?: Partial<Scene>;
+  sessions: Session[];
+  /** Called after a successful create or update — no data arg; mutation runs internally */
+  onSubmit?: () => void;
+  /** Called after a successful delete — mutation runs internally */
+  onDelete?: () => void;
+  runAction: (label: string, fn: () => Promise<void>) => Promise<void>;
+  onStatusChange: (msg: string) => void;
+}
+
+// ── Select options ─────────────────────────────────────────────────────────────
 
 const SCENE_TYPES = [
   { value: "Hard", label: "Hard / Core" },
@@ -19,15 +67,28 @@ const STATUS_OPTIONS = [
   { value: "Cut", label: "Cut" },
 ];
 
-function CreatableMultiTagSelect({ label, value, onChange, onCreateNew, placeholder, suggestions }) {
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+interface CreatableMultiTagSelectProps {
+  label: string;
+  value: string[];
+  onChange: (val: string[]) => void;
+  onCreateNew: (name: string) => void;
+  placeholder: string;
+  suggestions: string[];
+}
+
+function CreatableMultiTagSelect({
+  label, value, onChange, onCreateNew, placeholder, suggestions,
+}: CreatableMultiTagSelectProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  const inputRef = useRef(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    function handleClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -42,7 +103,7 @@ function CreatableMultiTagSelect({ label, value, onChange, onCreateNew, placehol
     selected.has(query.trim());
   const canCreate = query.trim() && !hasExactMatch;
 
-  function add(item) {
+  function add(item: string) {
     onChange([...value, item]);
     setQuery("");
     inputRef.current?.focus();
@@ -96,7 +157,13 @@ function CreatableMultiTagSelect({ label, value, onChange, onCreateNew, placehol
   );
 }
 
-function CollapsibleSection({ title, children, defaultOpen = false }) {
+interface CollapsibleSectionProps {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}
+
+function CollapsibleSection({ title, children, defaultOpen = false }: CollapsibleSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <details className="scene-section" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
@@ -109,10 +176,19 @@ function CollapsibleSection({ title, children, defaultOpen = false }) {
   );
 }
 
-function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPaths }) {
+interface PinsModalProps {
+  open: boolean;
+  onClose: () => void;
+  runAction: (label: string, fn: () => Promise<void>) => Promise<void>;
+  onStatusChange: (msg: string) => void;
+  onPin: (result: PinItem) => void;
+  pinnedPaths: string[];
+}
+
+function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPaths }: PinsModalProps) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
-  const [selectedPath, setSelectedPath] = useState(null);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [selectedContent, setSelectedContent] = useState("");
 
   async function pinSearch() {
@@ -120,23 +196,23 @@ function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPath
     await runAction("Searching vault...", async () => {
       const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=20`);
       if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
+      const json: SearchResult[] = await res.json();
       setResults(json);
       onStatusChange(`Found ${json.length} result${json.length === 1 ? "" : "s"}.`);
     });
   }
 
-  async function viewContent(path) {
+  async function viewContent(path: string) {
     await runAction(`Loading ${path}...`, async () => {
       const res = await fetch(`/api/files/markdown?path=${encodeURIComponent(path)}`);
       if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
+      const json: { markdown: string } = await res.json();
       setSelectedContent(json.markdown);
       setSelectedPath(path);
     });
   }
 
-  function handlePin(result) {
+  function handlePin(result: SearchResult) {
     onPin(result);
     setResults(results.filter((r) => r.path !== result.path));
     setSelectedPath(null);
@@ -211,7 +287,9 @@ function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPath
   );
 }
 
-const DEFAULT_SCENE = {
+// ── Default scene values ───────────────────────────────────────────────────────
+
+const DEFAULT_SCENE: Partial<Scene> = {
   title: "", type: "", status: "Draft", session_id: null, description: "",
   location: [], cast: [], clock: [], cuttable: false, purpose: "",
   pc_pressure: "", entry_pressure: "", exit_condition: "", core_clue: "",
@@ -221,14 +299,29 @@ const DEFAULT_SCENE = {
   if_ignore: "", if_short: "", notes: "", pinned_material: [],
 };
 
-export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, runAction, onStatusChange }) {
-  const [scene, setScene] = useState({ ...DEFAULT_SCENE, ...initialScene });
-  const [pinnedMaterial, setPinnedMaterial] = useState(initialScene?.pinned_material || []);
+// ── SceneForm ──────────────────────────────────────────────────────────────────
+
+export function SceneForm({
+  scene: initialScene,
+  sessions,
+  onSubmit,
+  onDelete,
+  runAction,
+  onStatusChange,
+}: SceneFormProps) {
+  const createMutation = useCreateScene();
+  const patchMutation = usePatchScene();
+  const deleteMutation = useDeleteScene();
+
+  const [scene, setScene] = useState<Partial<Scene>>({ ...DEFAULT_SCENE, ...initialScene });
+  const [pinnedMaterial, setPinnedMaterial] = useState<PinItem[]>(
+    initialScene?.pinned_material ?? []
+  );
   const [pinsModalOpen, setPinsModalOpen] = useState(false);
-  const [sceneDraft, setSceneDraft] = useState(null);
+  const [sceneDraft, setSceneDraft] = useState<SceneDraftResponse | null>(null);
   const [sceneText, setSceneText] = useState("");
   const [sceneTarget, setSceneTarget] = useState("");
-  const [sceneSavePreview, setSceneSavePreview] = useState(null);
+  const [sceneSavePreview, setSceneSavePreview] = useState<SceneSavePreview | null>(null);
 
   const [castSuggestions, setCastSuggestions] = useState(["Dan", "Ikazuchi", "Suigin", "Kubo"]);
   const [locationSuggestions, setLocationSuggestions] = useState(["Iron Keep", "Kanigakure", "Training grounds", "Forest"]);
@@ -242,36 +335,37 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
     })),
   ];
 
-  function set(field) {
-    return (val) => setScene((prev) => ({ ...prev, [field]: val }));
+  function set(field: keyof Scene) {
+    return (val: any) => setScene((prev) => ({ ...prev, [field]: val }));
   }
 
-  function setInput(field) {
-    return (e) => setScene((prev) => ({ ...prev, [field]: e.target.value }));
+  function setInput(field: keyof Scene) {
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setScene((prev) => ({ ...prev, [field]: e.target.value }));
   }
 
-  function handleCreateNewCast(name) {
+  function handleCreateNewCast(name: string) {
     setCastSuggestions((prev) => [...prev, name]);
-    setScene((prev) => ({ ...prev, cast: [...prev.cast, name] }));
+    setScene((prev) => ({ ...prev, cast: [...(prev.cast ?? []), name] }));
     onStatusChange(`Cast stub created: ${name}`);
   }
 
-  function handleCreateNewLocation(name) {
+  function handleCreateNewLocation(name: string) {
     setLocationSuggestions((prev) => [...prev, name]);
-    setScene((prev) => ({ ...prev, location: [...prev.location, name] }));
+    setScene((prev) => ({ ...prev, location: [...(prev.location ?? []), name] }));
     onStatusChange(`Location stub created: ${name}`);
   }
 
-  function handleCreateNewClock(name) {
+  function handleCreateNewClock(name: string) {
     setClockSuggestions((prev) => [...prev, name]);
-    setScene((prev) => ({ ...prev, clock: [...prev.clock, name] }));
+    setScene((prev) => ({ ...prev, clock: [...(prev.clock ?? []), name] }));
     onStatusChange(`Clock stub created: ${name}`);
   }
 
-  function pinItem(result) { setPinnedMaterial((prev) => [...prev, result]); }
-  function unpinItem(path) { setPinnedMaterial((prev) => prev.filter((m) => m.path !== path)); }
+  function pinItem(result: PinItem) { setPinnedMaterial((prev) => [...prev, result]); }
+  function unpinItem(path: string) { setPinnedMaterial((prev) => prev.filter((m) => m.path !== path)); }
 
-  async function postJson(url, payload) {
+  async function postJson(url: string, payload: unknown): Promise<any> {
     const res = await fetch(url, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -282,12 +376,12 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
 
   async function createDraft() {
     await runAction("Creating scene draft...", async () => {
-      const json = await postJson("/api/capture/scene", {
+      const json: SceneDraftResponse = await postJson("/api/capture/scene", {
         title: scene.title || "Untitled Scene",
         type: scene.type, cuttable: scene.cuttable, purpose: scene.purpose,
         pc_pressure: scene.pc_pressure, entry_pressure: scene.entry_pressure,
-        exit_condition: scene.exit_condition, cast: scene.cast.join(", "),
-        location: scene.location.join(", "), clock: scene.clock.join(", "),
+        exit_condition: scene.exit_condition, cast: (scene.cast ?? []).join(", "),
+        location: (scene.location ?? []).join(", "), clock: (scene.clock ?? []).join(", "),
         core_clue: scene.core_clue, superior_clue: scene.superior_clue,
         optional_clue: scene.optional_clue, false_lead: scene.false_lead,
         opening_image: scene.opening_image, sensory_words: scene.sensory_words,
@@ -308,7 +402,9 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
   async function previewDraft() {
     if (!sceneDraft) return;
     await runAction(`Preparing diff for ${sceneTarget}...`, async () => {
-      const json = await postJson(`/api/drafts/${sceneDraft.id}/preview`, { target_path: sceneTarget, markdown: sceneText });
+      const json: SceneSavePreview = await postJson(`/api/drafts/${sceneDraft.id}/preview`, {
+        target_path: sceneTarget, markdown: sceneText,
+      });
       setSceneSavePreview(json);
       onStatusChange(`Preview ready for ${json.path}.`);
     });
@@ -317,18 +413,29 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
   async function saveDraftToVault() {
     if (!sceneDraft) return;
     await runAction(`Saving ${sceneTarget}...`, async () => {
-      const json = await postJson(`/api/drafts/${sceneDraft.id}/save`, { target_path: sceneTarget, markdown: sceneText, confirm: true });
+      const json: SceneSavePreview = await postJson(`/api/drafts/${sceneDraft.id}/save`, {
+        target_path: sceneTarget, markdown: sceneText, confirm: true,
+      });
       setSceneSavePreview(json);
       onStatusChange(`Canonical Markdown saved to ${json.path}.`);
     });
   }
 
   async function handleSave() {
-    await onSave({ ...scene, pinned_material: pinnedMaterial });
+    const data: SceneCreate = { ...scene, pinned_material: pinnedMaterial };
+    if (scene.id) {
+      await patchMutation.mutateAsync({ id: scene.id, data });
+    } else {
+      await createMutation.mutateAsync(data);
+    }
+    onSubmit?.();
   }
 
   async function handleDelete() {
-    if (scene.id) await onDelete(scene.id);
+    if (!scene.id) return;
+    if (!confirm("Delete this scene?")) return;
+    await deleteMutation.mutateAsync(scene.id);
+    onDelete?.();
   }
 
   const pinnedPaths = pinnedMaterial.map((m) => m.path);
@@ -339,7 +446,7 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
       <div className="formGrid" style={{ marginBottom: "var(--space-4)" }}>
         <label className="field spanAll">
           <span>Title</span>
-          <input value={scene.title} onChange={setInput("title")} placeholder="Scene name or hook" />
+          <input value={scene.title ?? ""} onChange={setInput("title")} placeholder="Scene name or hook" />
         </label>
         <label className="field">
           <span>Type</span>
@@ -355,13 +462,13 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
         </label>
         <label className="field spanAll">
           <span>Description</span>
-          <textarea value={scene.description} onChange={setInput("description")} rows={2} placeholder="Brief prose description shown on the scene card" />
+          <textarea value={scene.description ?? ""} onChange={setInput("description")} rows={2} placeholder="Brief prose description shown on the scene card" />
         </label>
-        <CreatableMultiTagSelect label="Cast" value={scene.cast} onChange={set("cast")}
+        <CreatableMultiTagSelect label="Cast" value={scene.cast ?? []} onChange={set("cast")}
           onCreateNew={handleCreateNewCast} placeholder="Search or add cast…" suggestions={castSuggestions} />
-        <CreatableMultiTagSelect label="Location" value={scene.location} onChange={set("location")}
+        <CreatableMultiTagSelect label="Location" value={scene.location ?? []} onChange={set("location")}
           onCreateNew={handleCreateNewLocation} placeholder="Search or add location…" suggestions={locationSuggestions} />
-        <CreatableMultiTagSelect label="Clock / Thread" value={scene.clock} onChange={set("clock")}
+        <CreatableMultiTagSelect label="Clock / Thread" value={scene.clock ?? []} onChange={set("clock")}
           onCreateNew={handleCreateNewClock} placeholder="Search or add clock…" suggestions={clockSuggestions} />
       </div>
 
@@ -376,13 +483,13 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
             </button>
           </div>
           <label className="field spanAll"><span>Purpose</span>
-            <input value={scene.purpose} onChange={setInput("purpose")} placeholder="What does this scene accomplish?" /></label>
+            <input value={scene.purpose ?? ""} onChange={setInput("purpose")} placeholder="What does this scene accomplish?" /></label>
           <label className="field spanAll"><span>PC Pressure</span>
-            <input value={scene.pc_pressure} onChange={setInput("pc_pressure")} placeholder="Which PC lane does this press on?" /></label>
+            <input value={scene.pc_pressure ?? ""} onChange={setInput("pc_pressure")} placeholder="Which PC lane does this press on?" /></label>
           <label className="field spanAll"><span>Entry Pressure</span>
-            <input value={scene.entry_pressure} onChange={setInput("entry_pressure")} placeholder="What are the PCs facing at the start?" /></label>
+            <input value={scene.entry_pressure ?? ""} onChange={setInput("entry_pressure")} placeholder="What are the PCs facing at the start?" /></label>
           <label className="field spanAll"><span>Exit Condition</span>
-            <input value={scene.exit_condition} onChange={setInput("exit_condition")} placeholder="What ends the scene?" /></label>
+            <input value={scene.exit_condition ?? ""} onChange={setInput("exit_condition")} placeholder="What ends the scene?" /></label>
         </div>
       </CollapsibleSection>
 
@@ -408,13 +515,13 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
       <CollapsibleSection title="Clue Structure" defaultOpen={false}>
         <div className="formGrid">
           <label className="field spanAll"><span>Core information</span>
-            <textarea value={scene.core_clue} onChange={setInput("core_clue")} placeholder="What must the PCs learn?" rows={2} /></label>
+            <textarea value={scene.core_clue ?? ""} onChange={setInput("core_clue")} placeholder="What must the PCs learn?" rows={2} /></label>
           <label className="field spanAll"><span>Superior information</span>
-            <textarea value={scene.superior_clue} onChange={setInput("superior_clue")} placeholder="Learned if they succeed or roll well" rows={2} /></label>
+            <textarea value={scene.superior_clue ?? ""} onChange={setInput("superior_clue")} placeholder="Learned if they succeed or roll well" rows={2} /></label>
           <label className="field spanAll"><span>Optional information</span>
-            <textarea value={scene.optional_clue} onChange={setInput("optional_clue")} placeholder="Adds color or leverage" rows={2} /></label>
+            <textarea value={scene.optional_clue ?? ""} onChange={setInput("optional_clue")} placeholder="Adds color or leverage" rows={2} /></label>
           <label className="field spanAll"><span>False lead risk</span>
-            <textarea value={scene.false_lead} onChange={setInput("false_lead")} placeholder="Could this mislead them?" rows={2} /></label>
+            <textarea value={scene.false_lead ?? ""} onChange={setInput("false_lead")} placeholder="Could this mislead them?" rows={2} /></label>
         </div>
       </CollapsibleSection>
 
@@ -422,11 +529,11 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
       <CollapsibleSection title="Sensory Prep" defaultOpen={false}>
         <div className="formGrid">
           <label className="field spanAll"><span>Opening image</span>
-            <input value={scene.opening_image} onChange={setInput("opening_image")} placeholder="First visual impression" /></label>
+            <input value={scene.opening_image ?? ""} onChange={setInput("opening_image")} placeholder="First visual impression" /></label>
           <label className="field spanAll"><span>Sensory words</span>
-            <input value={scene.sensory_words} onChange={setInput("sensory_words")} placeholder="wet stone, rust, incense ash…" /></label>
+            <input value={scene.sensory_words ?? ""} onChange={setInput("sensory_words")} placeholder="wet stone, rust, incense ash…" /></label>
           <label className="field spanAll"><span>Interactable objects</span>
-            <input value={scene.interactable_objects} onChange={setInput("interactable_objects")} placeholder="duty board, cracked mask…" /></label>
+            <input value={scene.interactable_objects ?? ""} onChange={setInput("interactable_objects")} placeholder="duty board, cracked mask…" /></label>
         </div>
       </CollapsibleSection>
 
@@ -434,19 +541,19 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
       <CollapsibleSection title="Contingencies" defaultOpen={false}>
         <div className="formGrid">
           <label className="field"><span>Rules likely</span>
-            <input value={scene.rules_likely} onChange={setInput("rules_likely")} placeholder="stealth, grapples, chase…" /></label>
+            <input value={scene.rules_likely ?? ""} onChange={setInput("rules_likely")} placeholder="stealth, grapples, chase…" /></label>
           <label className="field"><span>Foundry needs</span>
-            <input value={scene.foundry_needs} onChange={setInput("foundry_needs")} placeholder="map, tokens, handout" /></label>
+            <input value={scene.foundry_needs ?? ""} onChange={setInput("foundry_needs")} placeholder="map, tokens, handout" /></label>
           <label className="field spanAll"><span>Replacement route</span>
-            <input value={scene.replacement_route} onChange={setInput("replacement_route")} placeholder="If players bypass the prep?" /></label>
+            <input value={scene.replacement_route ?? ""} onChange={setInput("replacement_route")} placeholder="If players bypass the prep?" /></label>
           <label className="field spanAll"><span>If PCs succeed</span>
-            <textarea value={scene.if_succeed} onChange={setInput("if_succeed")} rows={1} /></label>
+            <textarea value={scene.if_succeed ?? ""} onChange={setInput("if_succeed")} rows={1} /></label>
           <label className="field spanAll"><span>If PCs fail</span>
-            <textarea value={scene.if_fail} onChange={setInput("if_fail")} rows={1} /></label>
+            <textarea value={scene.if_fail ?? ""} onChange={setInput("if_fail")} rows={1} /></label>
           <label className="field spanAll"><span>If PCs ignore it</span>
-            <textarea value={scene.if_ignore} onChange={setInput("if_ignore")} rows={1} /></label>
+            <textarea value={scene.if_ignore ?? ""} onChange={setInput("if_ignore")} rows={1} /></label>
           <label className="field spanAll"><span>If time is short</span>
-            <textarea value={scene.if_short} onChange={setInput("if_short")} rows={1} /></label>
+            <textarea value={scene.if_short ?? ""} onChange={setInput("if_short")} rows={1} /></label>
         </div>
       </CollapsibleSection>
 
@@ -454,7 +561,7 @@ export function SceneForm({ scene: initialScene, sessions, onSave, onDelete, run
       <CollapsibleSection title="Notes" defaultOpen={false}>
         <div className="formGrid">
           <label className="field spanAll"><span>Notes</span>
-            <textarea value={scene.notes} onChange={setInput("notes")} rows={2} /></label>
+            <textarea value={scene.notes ?? ""} onChange={setInput("notes")} rows={2} /></label>
         </div>
       </CollapsibleSection>
 
