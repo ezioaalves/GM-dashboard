@@ -3,3 +3,8 @@ dist/
 .venv/
 __pycache__/
 .pytest_cache/
+
+# Alembic
+__pycache__/
+*.pyc
+alembic/versions/__pycache__/
