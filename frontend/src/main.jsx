@@ -250,7 +250,7 @@ function App() {
                         <p className="contextText">No session logs found.</p>
                       )}
                     </div>
-                    {contextData.npc_list.length > 0 && (
+                    {contextData.npc_list?.length > 0 && (
                       <div className="contextSection">
                         <div className="contextLabel">Last session NPCs</div>
                         <p className="contextText">{contextData.npc_list.join(", ")}</p>
@@ -265,7 +265,7 @@ function App() {
                         </p>
                       </div>
                     )}
-                    {contextData.active_threads.length > 0 && (
+                    {contextData.active_threads?.length > 0 && (
                       <div className="contextSection">
                         <div className="contextLabel">Active threads ({contextData.active_threads.length})</div>
                         {contextData.active_threads.map((t) => (
@@ -286,7 +286,7 @@ function App() {
                   <span>Scenes (one per line, in order)</span>
                   <textarea
                     value={form.scenes}
-                    onChange={(e) => setForm({ ...form, scenes: e.target.value })}
+                    onChange={(e) => setForm((f) => ({ ...f, scenes: e.target.value }))}
                     placeholder={"Party escapes the forest\nDan spots the patrol beacon"}
                     style={{ minHeight: 110 }}
                   />
@@ -301,7 +301,7 @@ function App() {
                   <span>Clues discovered (one per line)</span>
                   <textarea
                     value={form.clues_discovered}
-                    onChange={(e) => setForm({ ...form, clues_discovered: e.target.value })}
+                    onChange={(e) => setForm((f) => ({ ...f, clues_discovered: e.target.value }))}
                     style={{ minHeight: 80 }}
                   />
                 </label>
@@ -309,7 +309,7 @@ function App() {
                   <span>Threads touched (one per line)</span>
                   <textarea
                     value={form.threads_touched}
-                    onChange={(e) => setForm({ ...form, threads_touched: e.target.value })}
+                    onChange={(e) => setForm((f) => ({ ...f, threads_touched: e.target.value }))}
                     style={{ minHeight: 80 }}
                   />
                 </label>
@@ -317,7 +317,7 @@ function App() {
                   <span>Unresolved questions (one per line)</span>
                   <textarea
                     value={form.unresolved_questions}
-                    onChange={(e) => setForm({ ...form, unresolved_questions: e.target.value })}
+                    onChange={(e) => setForm((f) => ({ ...f, unresolved_questions: e.target.value }))}
                     style={{ minHeight: 80 }}
                   />
                 </label>
