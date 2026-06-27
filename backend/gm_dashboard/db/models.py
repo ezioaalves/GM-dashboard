@@ -117,7 +117,7 @@ class Session(Base):
     date = Column(Date)
     notes = Column(Text, nullable=False, server_default="")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     scenes = relationship("Scene", back_populates="session")
     session_note = relationship("SessionNote", back_populates="session", uselist=False, cascade="all, delete-orphan")
@@ -156,7 +156,7 @@ class Scene(Base):
     notes = Column(Text, nullable=False, server_default="")
     pinned_material = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     session = relationship("Session", back_populates="scenes")
 
@@ -178,7 +178,7 @@ class SessionNote(Base):
     target_path = Column(Text, nullable=False, server_default="")
     status = Column(Text, nullable=False, server_default="draft")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     session = relationship("Session", back_populates="session_note")
 
