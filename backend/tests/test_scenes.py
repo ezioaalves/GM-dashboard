@@ -392,3 +392,28 @@ def test_create_scene_invalid_status():
 def test_create_scene_invalid_type():
     res = client.post("/api/scenes", json={"title": "X", "type": "Bogus"})
     assert res.status_code == 422
+
+
+def test_list_scenes_filtered_by_session_id():
+    session_a = seed_session(number=1, name="Session A")
+    session_b = seed_session(number=2, name="Session B")
+    seed_scene({"title": "Scene in A", "session_id": session_a["id"]})
+    seed_scene({"title": "Scene in B", "session_id": session_b["id"]})
+    seed_scene({"title": "Scene in backlog", "session_id": None})
+
+    res = client.get(f"/api/scenes?session_id={session_a['id']}")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["title"] == "Scene in A"
+    assert data[0]["session_id"] == session_a["id"]
+
+
+def test_list_scenes_unfiltered_returns_all():
+    session = seed_session()
+    seed_scene({"title": "Scene with session", "session_id": session["id"]})
+    seed_scene({"title": "Scene in backlog", "session_id": None})
+
+    res = client.get("/api/scenes")
+    assert res.status_code == 200
+    assert len(res.json()) == 2
