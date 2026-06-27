@@ -16,6 +16,7 @@ interface SessionDeckProps {
   onErrorChange: (msg: string) => void;
   runAction: unknown;
   onSelectSession?: (sessionId: number) => void;
+  selectedSessionId?: number | null;
 }
 
 type NoteDraft = Omit<SessionNote, "id" | "session_id"> | null;
@@ -54,7 +55,7 @@ function hasNoteContent(note: NoteDraft): boolean {
   ].some((value) => String(value || "").trim());
 }
 
-export default function SessionDeck({ onStatusChange, onErrorChange, runAction, onSelectSession }: SessionDeckProps) {
+export default function SessionDeck({ onStatusChange, onErrorChange, runAction, onSelectSession, selectedSessionId }: SessionDeckProps) {
   const { data: sessions = [], error: queryError } = useSessionsQuery();
   const [modalSession, setModalSession] = useState<Session | Partial<Session> | null>(null);
   const [error, setError] = useState("");
@@ -148,12 +149,13 @@ export default function SessionDeck({ onStatusChange, onErrorChange, runAction, 
                   id={session.id}
                   as="button"
                   draggable={false}
+                  isSelected={session.id === selectedSessionId}
                   onClick={() => {
                     setModalSession(session);
                     onSelectSession?.(session.id);
                   }}
                 >
-                  <SessionCard session={session} />
+                  <SessionCard session={session} isSelected={session.id === selectedSessionId} />
                 </DeckCard>
               ))}
             </div>

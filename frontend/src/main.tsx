@@ -36,6 +36,11 @@ function App() {
   const [searchResults, setSearchResults] = useState([]);
   const [foundry, setFoundry] = useState(null);
   const [openFile, setOpenFile] = useState(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+
+  function handleSelectSession(id: number) {
+    setSelectedSessionId((prev) => (prev === id ? null : id));
+  }
 
   useEffect(() => {
     fetch("/api/cockpit/session")
@@ -134,6 +139,7 @@ function App() {
           )}
           {activeTool === "scene-deck" && (
             <SceneDeck
+              selectedSessionId={selectedSessionId}
               onStatusChange={setStatus}
               onErrorChange={setError}
               runAction={runAction}
@@ -141,6 +147,8 @@ function App() {
           )}
           {activeTool === "session-deck" && (
             <SessionDeck
+              selectedSessionId={selectedSessionId}
+              onSelectSession={handleSelectSession}
               onStatusChange={setStatus}
               onErrorChange={setError}
               runAction={runAction}

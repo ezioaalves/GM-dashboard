@@ -33,6 +33,11 @@ button.active {
   border-color: var(--color-accent);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .field {
   display: grid;
   gap: var(--space-2);
@@ -1228,6 +1233,13 @@ pre.sn-draft-tall {
   user-select: none;
 }
 
+button.deck-card {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  align-items: stretch;
+}
+
 .deck-card:hover {
   border-color: var(--color-border-strong);
 }
@@ -1273,7 +1285,7 @@ pre.sn-draft-tall {
 }
 
 .deck-modal {
-  max-width: 820px;
+  max-width: 1040px;
   width: 95vw;
   max-height: 90vh;
   display: flex;
@@ -1284,6 +1296,91 @@ pre.sn-draft-tall {
   padding: var(--space-4);
   overflow-y: auto;
   flex: 1;
+}
+
+.session-deck-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.session-status-group {
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+.session-card-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.session-card--active {
+  border: 2px solid var(--color-accent) !important;
+  background-color: var(--color-accent-dim, rgba(0, 150, 100, 0.1));
+}
+
+.session-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.session-summary-notes {
+  min-height: 96px;
+}
+
+.session-note-editor {
+  margin-top: var(--space-2);
+}
+
+.session-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-start;
+  padding: var(--space-3) 0;
+}
+
+.session-note-editor .sn-draft-col {
+  display: block;
+}
+
+.session-note-output {
+  display: block;
+}
+
+.session-note-editor .draftTabs {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+}
+
+.session-note-editor .draftTabs button {
+  flex: 0 0 auto;
+  min-height: 32px;
+}
+
+.session-note-editor .field {
+  margin-bottom: var(--space-3);
+}
+
+.session-note-editor .field:last-child {
+  margin-bottom: 0;
+}
+
+.session-note-editor textarea {
+  min-height: 110px;
+}
+
+.session-note-editor textarea.sn-draft-tall {
+  height: 260px;
+  min-height: 260px;
+}
+
+.session-note-editor .markdownPreview {
+  height: 300px;
+  min-height: 300px;
 }
 
 @media (max-width: 1200px) {
