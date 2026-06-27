@@ -120,7 +120,7 @@ class Session(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     scenes = relationship("Scene", back_populates="session")
-    session_note = relationship("SessionNote", back_populates="session", uselist=False)
+    session_note = relationship("SessionNote", back_populates="session", uselist=False, cascade="all, delete-orphan")
 
 
 class Scene(Base):

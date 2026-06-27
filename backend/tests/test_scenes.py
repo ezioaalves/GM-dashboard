@@ -22,6 +22,7 @@ def clean_tables():
     conn.autocommit = True
     with conn.cursor() as cur:
         cur.execute("DELETE FROM scenes")
+        cur.execute("DELETE FROM session_notes")
         cur.execute("DELETE FROM sessions")
     conn.close()
     yield
@@ -29,6 +30,7 @@ def clean_tables():
     conn.autocommit = True
     with conn.cursor() as cur:
         cur.execute("DELETE FROM scenes")
+        cur.execute("DELETE FROM session_notes")
         cur.execute("DELETE FROM sessions")
     conn.close()
 
@@ -38,8 +40,12 @@ def seed_session(number=1, name="Test Session"):
     conn.autocommit = True
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            "INSERT INTO sessions (number, name) VALUES (%s, %s) RETURNING id, number, name",
-            (number, name),
+            """
+            INSERT INTO sessions (number, name, status, date, notes)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, number, name, status, date, notes
+            """,
+            (number, name, "Planned", None, ""),
         )
         row = cur.fetchone()
     conn.close()
@@ -75,23 +81,194 @@ def test_list_sessions_empty():
 
 
 def test_create_session():
-    res = client.post("/api/sessions", json={"number": 18, "name": "The Iron Keep"})
+    res = client.post("/api/sessions", json={
+        "number": 18,
+        "name": "The Iron Keep",
+        "status": "Active",
+        "date": "2026-06-27",
+        "notes": "Open at the keep gates.",
+    })
     assert res.status_code == 201
     data = res.json()
     assert data["number"] == 18
     assert data["name"] == "The Iron Keep"
+    assert data["status"] == "Active"
+    assert data["date"] == "2026-06-27"
+    assert data["notes"] == "Open at the keep gates."
+    assert data["scene_count"] == 0
     assert "id" in data
 
 
 def test_list_sessions_returns_created():
     seed_session(number=17, name="Old session")
-    seed_session(number=18, name="New session")
+    session = seed_session(number=18, name="New session")
+    seed_scene({"session_id": session["id"]})
     res = client.get("/api/sessions")
     assert res.status_code == 200
     data = res.json()
     assert len(data) == 2
     # Ordered by number DESC
     assert data[0]["number"] == 18
+    assert data[0]["status"] == "Planned"
+    assert data[0]["date"] is None
+    assert data[0]["notes"] == ""
+    assert data[0]["scene_count"] == 1
+
+
+def test_create_session_duplicate_number():
+    seed_session(number=18)
+    res = client.post("/api/sessions", json={"number": 18, "name": "Duplicate"})
+    assert res.status_code == 409
+
+
+def test_create_session_invalid_status():
+    res = client.post("/api/sessions", json={"number": 18, "status": "Bogus"})
+    assert res.status_code == 422
+
+
+def test_update_session():
+    session = seed_session(number=18)
+    seed_scene({"session_id": session["id"]})
+    res = client.put(f"/api/sessions/{session['id']}", json={
+        "number": 19,
+        "name": "Updated Session",
+        "status": "Played",
+        "date": "2026-06-28",
+        "notes": "Wrapped the council scene.",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["number"] == 19
+    assert data["name"] == "Updated Session"
+    assert data["status"] == "Played"
+    assert data["date"] == "2026-06-28"
+    assert data["notes"] == "Wrapped the council scene."
+    assert data["scene_count"] == 1
+
+
+def test_update_session_not_found():
+    res = client.put("/api/sessions/99999", json={
+        "number": 19,
+        "name": "Missing",
+        "status": "Planned",
+        "date": None,
+        "notes": "",
+    })
+    assert res.status_code == 404
+
+
+def test_update_session_duplicate_number():
+    seed_session(number=18)
+    session = seed_session(number=19)
+    res = client.put(f"/api/sessions/{session['id']}", json={
+        "number": 18,
+        "name": "Duplicate",
+        "status": "Planned",
+        "date": None,
+        "notes": "",
+    })
+    assert res.status_code == 409
+
+
+def test_delete_session_moves_scenes_to_backlog():
+    session = seed_session()
+    scene = seed_scene({"session_id": session["id"]})
+    res = client.delete(f"/api/sessions/{session['id']}")
+    assert res.status_code == 200
+    assert res.json()["deleted"] is True
+    scene_res = client.get(f"/api/scenes/{scene['id']}")
+    assert scene_res.status_code == 200
+    assert scene_res.json()["session_id"] is None
+
+
+def test_delete_session_not_found():
+    res = client.delete("/api/sessions/99999")
+    assert res.status_code == 404
+
+
+def test_patch_session_status():
+    session = seed_session(number=18, name="Test Session")
+    res = client.patch(f"/api/sessions/{session['id']}/status", json={"status": "Active"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["id"] == session["id"]
+    assert data["status"] == "Active"
+
+    # Verify status was updated
+    res = client.get("/api/sessions")
+    assert res.json()[0]["status"] == "Active"
+
+
+def test_patch_session_status_invalid():
+    session = seed_session()
+    res = client.patch(f"/api/sessions/{session['id']}/status", json={"status": "Invalid"})
+    assert res.status_code == 422
+
+
+def test_patch_session_status_not_found():
+    res = client.patch("/api/sessions/99999/status", json={"status": "Played"})
+    assert res.status_code == 404
+
+
+def test_get_session_note_empty():
+    session = seed_session()
+    res = client.get(f"/api/sessions/{session['id']}/note")
+    assert res.status_code == 200
+    assert res.json() is None
+
+
+def test_upsert_session_note():
+    session = seed_session()
+    payload = {
+        "scenes": ["Council opens", "Dan presses the clue"],
+        "npcs_present": ["Dan"],
+        "clues_discovered": ["The seal is forged"],
+        "threads_touched": ["iron-keep"],
+        "unresolved_questions": ["Who forged it?"],
+        "next_session_hook": "Alarm bells ring",
+        "memory": "Strong table energy.",
+        "markdown": "# Custom",
+        "target_path": "Campaign Management/session-logs/01-custom.md",
+        "status": "draft",
+    }
+    res = client.put(f"/api/sessions/{session['id']}/note", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["session_id"] == session["id"]
+    assert data["scenes"] == ["Council opens", "Dan presses the clue"]
+    assert data["npcs_present"] == ["Dan"]
+    assert data["markdown"] == "# Custom"
+
+    res = client.get(f"/api/sessions/{session['id']}/note")
+    assert res.status_code == 200
+    assert res.json()["next_session_hook"] == "Alarm bells ring"
+
+
+def test_generate_session_note_persists_markdown():
+    session = seed_session(number=18, name="The Iron Keep")
+    res = client.post(f"/api/sessions/{session['id']}/note/generate", json={
+        "scenes": ["The party enters the keep"],
+        "npcs_present": ["Dattoumaru"],
+        "clues_discovered": ["The ledger is altered"],
+        "threads_touched": ["iron-keep"],
+        "unresolved_questions": ["Where is the real ledger?"],
+        "next_session_hook": "The patrol arrives",
+        "memory": "Keep the pressure on.",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["target_path"] == "Campaign Management/session-logs/18-the-iron-keep.md"
+    assert "# Session 18 - The Iron Keep" in data["markdown"]
+    assert "1. The party enters the keep" in data["markdown"]
+    assert "- Dattoumaru" in data["markdown"]
+
+
+def test_session_note_deleted_with_session():
+    session = seed_session()
+    client.put(f"/api/sessions/{session['id']}/note", json={"memory": "Stored note"})
+    assert client.get(f"/api/sessions/{session['id']}/note").json()["memory"] == "Stored note"
+    assert client.delete(f"/api/sessions/{session['id']}").status_code == 200
+    assert client.get(f"/api/sessions/{session['id']}/note").status_code == 404
 
 
 # --- Scenes ---
