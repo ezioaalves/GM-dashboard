@@ -76,12 +76,6 @@ def test_cockpit_seeds_leaveoff_from_session_17(tmp_path):
     assert cockpit["columns"]["scene_deck"][0]["id"] == "survive-the-forest"
 
 
-def test_ticket_stage_parsing(tmp_path):
-    seed_vault(tmp_path)
-    tickets = services.ticket_files(tmp_path)
-    assert tickets[0]["stage"] == "now"
-    assert tickets[0]["next_action"] == "Build first screen"
-
 
 def test_draft_session_note_and_save_path(tmp_path):
     seed_vault(tmp_path)

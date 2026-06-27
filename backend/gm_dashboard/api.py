@@ -6,9 +6,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from . import services
+from .tickets_router import router as tickets_router
 
 
 app = FastAPI(title="Kaihou GM Dashboard", version="0.1.0")
+app.include_router(tickets_router, prefix="/api")
 
 
 class SessionNoteRequest(BaseModel):
@@ -81,10 +83,6 @@ def capture_scene(payload: SceneRequest) -> dict[str, Any]:
 def search(q: str, limit: int = 20) -> list[dict[str, str]]:
     return handle(services.search_vault, q, limit=limit)
 
-
-@app.get("/api/tickets")
-def tickets() -> list[dict[str, Any]]:
-    return handle(lambda: services.ticket_files(services.find_vault_root()))
 
 
 @app.post("/api/drafts/{draft_id}/save")
