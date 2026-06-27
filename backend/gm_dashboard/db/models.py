@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import enum
+
 from sqlalchemy import (
     ARRAY, Boolean, Column, Date, DateTime, ForeignKey,
-    Integer, Text, UniqueConstraint, func, text,
+    Integer, String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, relationship
+
+
+class SessionStatus(str, enum.Enum):
+    PLANNED = "Planned"
+    ACTIVE = "Active"
+    PLAYED = "Played"
 
 
 class Base(DeclarativeBase):
@@ -105,7 +113,7 @@ class Session(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     number = Column(Integer, nullable=False, unique=True)
     name = Column(Text, nullable=False, server_default="")
-    status = Column(Text, nullable=False, server_default="Planned")
+    status = Column(String, default=SessionStatus.PLANNED.value, nullable=False)
     date = Column(Date)
     notes = Column(Text, nullable=False, server_default="")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

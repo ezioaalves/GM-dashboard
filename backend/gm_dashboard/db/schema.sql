@@ -79,3 +79,65 @@ CREATE TABLE IF NOT EXISTS tickets (
   updated_at   TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+  id          SERIAL PRIMARY KEY,
+  number      INTEGER NOT NULL UNIQUE,
+  name        TEXT NOT NULL DEFAULT '',
+  status      TEXT NOT NULL DEFAULT 'Planned' CHECK (status IN ('Planned', 'Active', 'Played')),
+  date        DATE,
+  notes       TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS scenes (
+  id                   SERIAL PRIMARY KEY,
+  title                TEXT NOT NULL DEFAULT '',
+  type                 TEXT NOT NULL DEFAULT '',
+  status               TEXT NOT NULL DEFAULT 'Draft',
+  session_id           INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+  description          TEXT NOT NULL DEFAULT '',
+  location             TEXT[] NOT NULL DEFAULT '{}',
+  "cast"               TEXT[] NOT NULL DEFAULT '{}',
+  "clock"              TEXT[] NOT NULL DEFAULT '{}',
+  cuttable             BOOLEAN NOT NULL DEFAULT FALSE,
+  purpose              TEXT NOT NULL DEFAULT '',
+  pc_pressure          TEXT NOT NULL DEFAULT '',
+  entry_pressure       TEXT NOT NULL DEFAULT '',
+  exit_condition       TEXT NOT NULL DEFAULT '',
+  core_clue            TEXT NOT NULL DEFAULT '',
+  superior_clue        TEXT NOT NULL DEFAULT '',
+  optional_clue        TEXT NOT NULL DEFAULT '',
+  false_lead           TEXT NOT NULL DEFAULT '',
+  opening_image        TEXT NOT NULL DEFAULT '',
+  sensory_words        TEXT NOT NULL DEFAULT '',
+  interactable_objects TEXT NOT NULL DEFAULT '',
+  rules_likely         TEXT NOT NULL DEFAULT '',
+  foundry_needs        TEXT NOT NULL DEFAULT '',
+  replacement_route    TEXT NOT NULL DEFAULT '',
+  if_succeed           TEXT NOT NULL DEFAULT '',
+  if_fail              TEXT NOT NULL DEFAULT '',
+  if_ignore            TEXT NOT NULL DEFAULT '',
+  if_short             TEXT NOT NULL DEFAULT '',
+  notes                TEXT NOT NULL DEFAULT '',
+  pinned_material      JSONB NOT NULL DEFAULT '[]',
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS session_notes (
+  id                   SERIAL PRIMARY KEY,
+  session_id           INTEGER NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+  scenes               TEXT[] NOT NULL DEFAULT '{}',
+  npcs_present         TEXT[] NOT NULL DEFAULT '{}',
+  clues_discovered     TEXT[] NOT NULL DEFAULT '{}',
+  threads_touched      TEXT[] NOT NULL DEFAULT '{}',
+  unresolved_questions TEXT[] NOT NULL DEFAULT '{}',
+  next_session_hook    TEXT NOT NULL DEFAULT '',
+  memory               TEXT NOT NULL DEFAULT '',
+  markdown             TEXT NOT NULL DEFAULT '',
+  target_path          TEXT NOT NULL DEFAULT '',
+  status               TEXT NOT NULL DEFAULT 'draft',
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
