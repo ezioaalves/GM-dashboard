@@ -13,6 +13,12 @@ app = FastAPI(title="Kaihou GM Dashboard", version="0.1.0")
 
 class SessionNoteRequest(BaseModel):
     memory: str = ""
+    scenes: list[str] = []
+    npcs_present: list[str] = []
+    clues_discovered: list[str] = []
+    threads_touched: list[str] = []
+    unresolved_questions: list[str] = []
+    next_session_hook: str = ""
 
 
 class SceneRequest(BaseModel):
@@ -54,7 +60,16 @@ def capture_session_note_context() -> dict[str, Any]:
 
 @app.post("/api/capture/session-note")
 def capture_session_note(payload: SessionNoteRequest) -> dict[str, Any]:
-    return handle(services.draft_session_note, payload.memory)
+    return handle(
+        services.draft_session_note,
+        payload.memory,
+        scenes=payload.scenes,
+        npcs_present=payload.npcs_present,
+        clues_discovered=payload.clues_discovered,
+        threads_touched=payload.threads_touched,
+        unresolved_questions=payload.unresolved_questions,
+        next_session_hook=payload.next_session_hook,
+    )
 
 
 @app.post("/api/capture/scene")

@@ -233,3 +233,58 @@ title: Test
     )
     ctx = services.session_note_context(tmp_path)
     assert ctx["live_prep_excerpt"] == ""
+
+
+def test_draft_session_note_structured_sections(tmp_path):
+    seed_vault(tmp_path)
+    draft = services.draft_session_note(
+        "",
+        tmp_path,
+        scenes=["Party escapes the forest", "Dan spots the patrol beacon"],
+        npcs_present=["Dan", "Ikazuchi"],
+        clues_discovered=["The scroll was forged"],
+        threads_touched=["onimusha-team-identity"],
+        unresolved_questions=["Where is Haiiro?"],
+        next_session_hook="Party emerges at dawn",
+    )
+    md = draft["markdown"]
+    assert "1. Party escapes the forest" in md
+    assert "2. Dan spots the patrol beacon" in md
+    assert "- Dan" in md
+    assert "- The scroll was forged" in md
+    assert "- onimusha-team-identity" in md
+    assert "- Where is Haiiro?" in md
+    assert "Party emerges at dawn" in md
+
+
+def test_draft_session_note_todo_markers_when_empty(tmp_path):
+    seed_vault(tmp_path)
+    draft = services.draft_session_note("", tmp_path)
+    md = draft["markdown"]
+    assert "<!-- TODO: add scene summaries" in md
+    assert "<!-- TODO: list NPCs present" in md
+    assert "<!-- TODO: list clues discovered" in md
+    assert "<!-- TODO: list threads/clocks touched" in md
+    assert "<!-- TODO: list unresolved questions" in md
+    assert "<!-- TODO: set next-session hook" in md
+    assert "<!-- TODO: add GM continuity notes" in md
+
+
+def test_draft_session_note_title_prefers_hook(tmp_path):
+    seed_vault(tmp_path)
+    draft = services.draft_session_note(
+        "some memory",
+        tmp_path,
+        next_session_hook="Dawn in the forest",
+    )
+    assert "dawn-in-the-forest" in draft["default_target_path"]
+
+
+def test_draft_session_note_title_falls_back_to_first_scene(tmp_path):
+    seed_vault(tmp_path)
+    draft = services.draft_session_note(
+        "",
+        tmp_path,
+        scenes=["Forest escape"],
+    )
+    assert "forest-escape" in draft["default_target_path"]

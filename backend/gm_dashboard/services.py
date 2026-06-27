@@ -195,7 +195,7 @@ def session_note_context(vault: Path | None = None) -> dict[str, Any]:
                     "next_move": str(fm.get("next_move", "")),
                 })
 
-    npc_list: list[str] = latest.get("npcs_present", []) if latest else []
+    npc_list: list[str] = (latest.get("npcs_present") or []) if latest else []
     return {
         "latest_session": latest,
         "live_prep_excerpt": live_prep_excerpt,
@@ -379,13 +379,57 @@ def resolve_vault_markdown(root: Path, path: str) -> Path:
     raise VaultError(f"markdown file does not exist: {path}")
 
 
-def draft_session_note(memory: str, vault: Path | None = None) -> dict[str, Any]:
+def _render_list(items: list[str], todo_msg: str) -> str:
+    if not items:
+        return f"<!-- TODO: {todo_msg} -->"
+    return "\n".join(f"- {item}" for item in items)
+
+
+def _render_numbered(items: list[str], todo_msg: str) -> str:
+    if not items:
+        return f"<!-- TODO: {todo_msg} -->"
+    return "\n".join(f"{i + 1}. {item}" for i, item in enumerate(items))
+
+
+def _yaml_list(items: list[str]) -> str:
+    if not items:
+        return "[]"
+    return "[" + ", ".join(items) + "]"
+
+
+def _derive_title_structured(next_session_hook: str, scenes: list[str], memory: str) -> str:
+    if next_session_hook.strip():
+        return next_session_hook.strip()[:80]
+    if scenes:
+        return scenes[0].strip()[:80]
+    return derive_title(memory)
+
+
+def draft_session_note(
+    memory: str = "",
+    vault: Path | None = None,
+    *,
+    scenes: list[str] | None = None,
+    npcs_present: list[str] | None = None,
+    clues_discovered: list[str] | None = None,
+    threads_touched: list[str] | None = None,
+    unresolved_questions: list[str] | None = None,
+    next_session_hook: str = "",
+) -> dict[str, Any]:
     root = vault or find_vault_root()
     latest = latest_session_log(root)
     next_session = (root / LIVE_PREP).read_text() if (root / LIVE_PREP).exists() else ""
     session_no = int(latest["session"]) + 1
-    title = derive_title(memory) or f"Session {session_no} Draft"
     today = datetime.now().date().isoformat()
+
+    _scenes = scenes or []
+    _npcs = npcs_present or []
+    _clues = clues_discovered or []
+    _threads = threads_touched or []
+    _questions = unresolved_questions or []
+
+    title = _derive_title_structured(next_session_hook, _scenes, memory) or f"Session {session_no} Draft"
+
     markdown = f"""---
 schema_version: 1
 session: {session_no}
@@ -396,32 +440,44 @@ threads:
   advanced: []
   planted: []
   resolved: []
-npcs_present: []
+npcs_present: {_yaml_list(_npcs)}
 locations: []
 has_secret: false
 ---
 
-# Session {session_no} - {title}
+# Session {session_no} — {title}
 
 ## What happened
 
-{memory.strip() or "[Add GM memory here.]"}
-
-## Continuity seed
-
-Previous played session left on Ox 22: party fleeing the Tetsu no Oni, Haiiro missing.
-
-## Prep source checked
-
-Last live prep file: `{LIVE_PREP.as_posix()}`.
-
-## Notable moments
-
-- [Add table moments.]
+{_render_numbered(_scenes, "add scene summaries, one per line")}
 
 ## NPCs in play
 
-- [Add NPCs.]
+{_render_list(_npcs, "list NPCs present")}
+
+## Clues discovered
+
+{_render_list(_clues, "list clues discovered")}
+
+## Threads touched
+
+{_render_list(_threads, "list threads/clocks touched")}
+
+## Unresolved questions
+
+{_render_list(_questions, "list unresolved questions")}
+
+## Hook for next session
+
+{next_session_hook.strip() if next_session_hook.strip() else "<!-- TODO: set next-session hook -->"}
+
+## Continuity notes
+
+{memory.strip() if memory.strip() else "<!-- TODO: add GM continuity notes -->"}
+
+## Notable moments
+
+<!-- TODO: add table moments -->
 """
     draft_id = f"session-{session_no}-{uuid.uuid4().hex[:8]}"
     path = root / SESSION_LOGS / "_drafts" / f"{draft_id}.md"
