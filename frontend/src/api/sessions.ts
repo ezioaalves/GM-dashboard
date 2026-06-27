@@ -53,3 +53,25 @@ export function useDeleteSession() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
   });
 }
+
+export function usePatchSessionStatus() {
+  const qc = useQueryClient();
+  return useMutation<
+    { id: number; status: string },
+    Error,
+    { id: number; status: "Planned" | "Active" | "Played" }
+  >({
+    mutationFn: ({ id, status }) =>
+      apiFetch<{ id: number; status: string }>(`/api/sessions/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+}
+
+// Alias: usePatchSession is the full-replace PUT (same as useUpdateSession)
+export function usePatchSession() {
+  return useUpdateSession();
+}
