@@ -1330,6 +1330,19 @@ button.deck-card {
   min-height: 96px;
 }
 
+.session-card__status-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.session-card__status-badge:hover {
+  opacity: 0.7;
+}
+
 .session-note-editor {
   margin-top: var(--space-2);
 }

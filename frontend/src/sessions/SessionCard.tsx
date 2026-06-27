@@ -1,4 +1,7 @@
+import { usePatchSessionStatus } from "../api/sessions";
 import type { Session } from "../types/session";
+
+const SESSION_STATUSES = ["Planned", "Active", "Played"] as const;
 
 const STATUS_COLORS: Record<string, string> = {
   Planned: "var(--color-text-muted)",
@@ -14,14 +17,27 @@ interface SessionCardProps {
 }
 
 export function SessionCard({ session, onClick, isSelected, sceneCount }: SessionCardProps) {
+  const patchStatus = usePatchSessionStatus();
   const snippet = (session.notes || "").slice(0, 90);
   const truncated = (session.notes || "").length > 90;
+
+  async function handleStatusClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    const currentIndex = SESSION_STATUSES.indexOf(session.status as typeof SESSION_STATUSES[number]);
+    const nextStatus = SESSION_STATUSES[(currentIndex + 1) % SESSION_STATUSES.length];
+    await patchStatus.mutateAsync({ id: session.id, status: nextStatus });
+  }
 
   return (
     <>
       <div className="deck-card-badges">
         <span className="tag">Session {session.number}</span>
-        <span className="tag" style={{ color: STATUS_COLORS[session.status] }}>
+        <span
+          className="session-card__status-badge"
+          style={{ color: STATUS_COLORS[session.status] }}
+          onClick={handleStatusClick}
+          title="Click to advance status"
+        >
           {session.status}
         </span>
       </div>
