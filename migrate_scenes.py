@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS scenes (
+DROP TABLE IF EXISTS scenes;
+
+CREATE TABLE scenes (
     id                   SERIAL PRIMARY KEY,
     title                TEXT NOT NULL DEFAULT '',
     type                 TEXT NOT NULL DEFAULT '',
