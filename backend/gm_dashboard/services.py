@@ -5,7 +5,6 @@ import os
 import re
 import sqlite3
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -303,6 +302,26 @@ def save_vault_markdown_file(path: str, markdown: str, vault: Path | None = None
     }
 
 
+def resolve_canonical_markdown_target(root: Path, path: str) -> Path:
+    if not path:
+        raise VaultError("missing canonical target path")
+    target = (root / path).resolve()
+    if root.resolve() not in [target, *target.parents]:
+        raise VaultError("target path escapes vault")
+    if target.suffix != ".md":
+        raise VaultError("only Markdown files can be saved canonically")
+    if "_drafts" in target.parts:
+        raise VaultError("canonical target cannot be inside _drafts")
+    allowed_roots = [
+        root / "Campaign Management",
+        root / "Lore",
+        root / "Mechanics",
+    ]
+    if not any(base.resolve() in [target, *target.parents] for base in allowed_roots):
+        raise VaultError("target path is outside canonical vault content roots")
+    return target
+
+
 def resolve_vault_markdown(root: Path, path: str) -> Path:
     if not path:
         raise VaultError("missing markdown path")
@@ -375,6 +394,7 @@ Last live prep file: `{LIVE_PREP.as_posix()}`.
         "id": draft_id,
         "type": "session-log",
         "path": relative(root, path),
+        "default_target_path": f"{SESSION_LOGS.as_posix()}/{session_no:02d}-{slugify(title)}.md",
         "markdown": markdown,
         "source": {
             "latest_session": latest,
@@ -390,6 +410,11 @@ def derive_title(memory: str) -> str:
         if clean:
             return clean[:80]
     return ""
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "draft"
 
 
 def draft_scene(payload: dict[str, Any], vault: Path | None = None) -> dict[str, Any]:
@@ -411,25 +436,70 @@ def draft_scene(payload: dict[str, Any], vault: Path | None = None) -> dict[str,
     path = root / "Campaign Management" / "01 - Live" / "Current Situation" / "_drafts" / f"{draft_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(markdown)
-    return {"id": draft_id, "type": "scene", "path": relative(root, path), "markdown": markdown}
+    return {
+        "id": draft_id,
+        "type": "scene",
+        "path": relative(root, path),
+        "default_target_path": (
+            "Campaign Management/01 - Live/Current Situation/"
+            f"{slugify(title)}.md"
+        ),
+        "markdown": markdown,
+    }
 
 
-def save_draft(draft_id: str, target_path: str, vault: Path | None = None) -> dict[str, Any]:
-    root = vault or find_vault_root()
+def find_draft(root: Path, draft_id: str) -> Path:
+    if not re.fullmatch(r"[a-z0-9-]+", draft_id):
+        raise VaultError(f"invalid draft id: {draft_id}")
     candidates = list(root.glob(f"**/_drafts/{draft_id}.md"))
     if not candidates:
         raise VaultError(f"draft not found: {draft_id}")
-    target = (root / target_path).resolve()
-    if root.resolve() not in [target, *target.parents]:
-        raise VaultError("target path escapes vault")
+    return candidates[0]
+
+
+def preview_draft_save(
+    draft_id: str,
+    target_path: str,
+    vault: Path | None = None,
+    *,
+    markdown: str | None = None,
+) -> dict[str, Any]:
+    root = vault or find_vault_root()
+    draft = find_draft(root, draft_id)
+    target = resolve_canonical_markdown_target(root, target_path)
     old = target.read_text() if target.exists() else ""
-    new = candidates[0].read_text()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(new)
+    new = draft.read_text() if markdown is None else markdown
     return {
-        "saved": True,
+        "saved": False,
+        "draft_path": relative(root, draft),
         "path": relative(root, target),
         "diff": unified_diff(old, new, fromfile=target_path, tofile=target_path),
+        "markdown": new,
+        "target_exists": target.exists(),
+    }
+
+
+def save_draft(
+    draft_id: str,
+    target_path: str,
+    vault: Path | None = None,
+    *,
+    markdown: str | None = None,
+    confirm: bool = False,
+) -> dict[str, Any]:
+    if not confirm:
+        raise VaultError("canonical save requires confirm=true after preview")
+    root = vault or find_vault_root()
+    draft = find_draft(root, draft_id)
+    preview = preview_draft_save(draft_id, target_path, root, markdown=markdown)
+    target = resolve_canonical_markdown_target(root, preview["path"])
+    if markdown is not None:
+        draft.write_text(markdown)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(preview["markdown"])
+    return {
+        **preview,
+        "saved": True,
     }
 
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { FileDiff, Link, NotebookPen, Plus, Save, Search, ShieldCheck, X } from "lucide-react";
+import { Eye, FileDiff, Link, NotebookPen, Plus, Save, Search, ShieldCheck, X } from "lucide-react";
 import "./styles.css";
 
 const columns = [
@@ -23,14 +23,18 @@ function App() {
   const [memory, setMemory] = useState("");
   const [sessionDraft, setSessionDraft] = useState(null);
   const [draftText, setDraftText] = useState("");
+  const [sessionTarget, setSessionTarget] = useState("");
+  const [sessionSavePreview, setSessionSavePreview] = useState(null);
   const [scene, setScene] = useState({ title: "", purpose: "", cast: "", clue: "", clock: "", foundry_needs: "", notes: "" });
   const [sceneDraft, setSceneDraft] = useState(null);
+  const [sceneText, setSceneText] = useState("");
+  const [sceneTarget, setSceneTarget] = useState("");
+  const [sceneSavePreview, setSceneSavePreview] = useState(null);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [foundry, setFoundry] = useState(null);
   const [openFile, setOpenFile] = useState(null);
-  const [openText, setOpenText] = useState("");
 
   useEffect(() => {
     fetch("/api/cockpit/session")
@@ -44,6 +48,8 @@ function App() {
       const json = await postJson("/api/capture/session-note", { memory });
       setSessionDraft(json);
       setDraftText(json.markdown);
+      setSessionTarget(json.default_target_path);
+      setSessionSavePreview(null);
       setStatus(`Session draft written to ${json.path}`);
     });
   }
@@ -60,6 +66,9 @@ function App() {
         notes: scene.notes,
       });
       setSceneDraft(json);
+      setSceneText(json.markdown);
+      setSceneTarget(json.default_target_path);
+      setSceneSavePreview(null);
       setStatus(`Scene draft written to ${json.path}`);
     });
   }
@@ -100,22 +109,25 @@ function App() {
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json();
       setOpenFile(json);
-      setOpenText(json.markdown);
       setStatus(`Opened ${json.path}.`);
     });
   }
 
-  async function saveMarkdown() {
-    if (!openFile) return;
-    await runAction(`Saving ${openFile.path}...`, async () => {
-      const res = await fetch(`/api/files/markdown?path=${encodeURIComponent(openFile.path)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ markdown: openText }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
-      setStatus(`Saved ${json.path}.`);
+  async function previewDraft(draft, targetPath, markdown, setPreview) {
+    if (!draft) return;
+    await runAction(`Preparing diff for ${targetPath}...`, async () => {
+      const json = await postJson(`/api/drafts/${draft.id}/preview`, { target_path: targetPath, markdown });
+      setPreview(json);
+      setStatus(`Preview ready for ${json.path}.`);
+    });
+  }
+
+  async function saveDraft(draft, targetPath, markdown, setPreview) {
+    if (!draft) return;
+    await runAction(`Saving ${targetPath}...`, async () => {
+      const json = await postJson(`/api/drafts/${draft.id}/save`, { target_path: targetPath, markdown, confirm: true });
+      setPreview(json);
+      setStatus(`Canonical Markdown saved to ${json.path}.`);
     });
   }
 
@@ -208,9 +220,16 @@ Path: {data.latest_session.path}</pre>
                   <span>Preview</span>
                   <pre>{draftText}</pre>
                 </label>
+                <div className="saveFlow diffBox">
+                  <Input label="Canonical target path" value={sessionTarget} onChange={setSessionTarget} />
+                  <div className="saveActions">
+                    <button onClick={() => previewDraft(sessionDraft, sessionTarget, draftText, setSessionSavePreview)}><Eye size={16} /> Preview Save</button>
+                    <button onClick={() => saveDraft(sessionDraft, sessionTarget, draftText, setSessionSavePreview)}><Save size={16} /> Confirm Save</button>
+                  </div>
+                </div>
                 <label className="field diffBox">
-                  <span>Initial Diff</span>
-                  <pre>{sessionDraft.diff}</pre>
+                  <span>{sessionSavePreview ? "Canonical Diff" : "Initial Draft Diff"}</span>
+                  <pre>{(sessionSavePreview && sessionSavePreview.diff) || sessionDraft.diff}</pre>
                 </label>
               </div>
             )}
@@ -238,7 +257,31 @@ Path: {data.latest_session.path}</pre>
                 <textarea value={scene.notes} onChange={(e) => setScene({ ...scene, notes: e.target.value })} />
               </label>
             </div>
-            {sceneDraft && <pre className="resultBlock">{sceneDraft.markdown}</pre>}
+            {sceneDraft && (
+              <div className="draftGrid">
+                <label className="field">
+                  <span>Editable Scene Draft - {sceneDraft.path}</span>
+                  <textarea value={sceneText} onChange={(e) => setSceneText(e.target.value)} />
+                </label>
+                <label className="field">
+                  <span>Preview</span>
+                  <pre>{sceneText}</pre>
+                </label>
+                <div className="saveFlow diffBox">
+                  <Input label="Canonical target path" value={sceneTarget} onChange={setSceneTarget} />
+                  <div className="saveActions">
+                    <button onClick={() => previewDraft(sceneDraft, sceneTarget, sceneText, setSceneSavePreview)}><Eye size={16} /> Preview Save</button>
+                    <button onClick={() => saveDraft(sceneDraft, sceneTarget, sceneText, setSceneSavePreview)}><Save size={16} /> Confirm Save</button>
+                  </div>
+                </div>
+                {sceneSavePreview && (
+                  <label className="field diffBox">
+                    <span>Canonical Diff</span>
+                    <pre>{sceneSavePreview.diff}</pre>
+                  </label>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -325,14 +368,14 @@ Path: {data.latest_session.path}</pre>
             <header className="modalHeader">
               <div>
                 <h2>Markdown Editor</h2>
+                <p>Read-only context. Canonical writes go through draft preview and confirm flows.</p>
                 <code>{openFile.path}</code>
               </div>
               <div className="modalActions">
-                <button onClick={saveMarkdown}><Save size={16} /> Save Markdown</button>
                 <button onClick={() => setOpenFile(null)}><X size={16} /> Close</button>
               </div>
             </header>
-            <textarea value={openText} onChange={(e) => setOpenText(e.target.value)} />
+            <pre>{openFile.markdown}</pre>
           </section>
         </div>
       )}

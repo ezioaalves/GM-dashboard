@@ -27,6 +27,8 @@ class SceneRequest(BaseModel):
 
 class SaveDraftRequest(BaseModel):
     target_path: str
+    confirm: bool = False
+    markdown: str | None = None
 
 
 class MarkdownSaveRequest(BaseModel):
@@ -67,7 +69,18 @@ def tickets() -> list[dict[str, Any]]:
 
 @app.post("/api/drafts/{draft_id}/save")
 def save_draft(draft_id: str, payload: SaveDraftRequest) -> dict[str, Any]:
-    return handle(services.save_draft, draft_id, payload.target_path)
+    return handle(
+        services.save_draft,
+        draft_id,
+        payload.target_path,
+        markdown=payload.markdown,
+        confirm=payload.confirm,
+    )
+
+
+@app.post("/api/drafts/{draft_id}/preview")
+def preview_draft_save(draft_id: str, payload: SaveDraftRequest) -> dict[str, Any]:
+    return handle(services.preview_draft_save, draft_id, payload.target_path, markdown=payload.markdown)
 
 
 @app.get("/api/foundry/status")

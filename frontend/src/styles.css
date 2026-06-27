@@ -328,6 +328,12 @@ code {
   margin: 0 0 4px;
 }
 
+.modalHeader p {
+  color: #b8c1ba;
+  font-size: 13px;
+  margin: 0 0 6px;
+}
+
 .modalHeader code {
   margin-top: 0;
 }
@@ -339,12 +345,12 @@ code {
   justify-content: flex-end;
 }
 
-.markdownModal textarea {
+.markdownModal pre {
   border: 0;
   border-radius: 0;
   height: 100%;
+  margin: 0;
   min-height: 70vh;
-  resize: none;
 }
 
 .draftGrid {
@@ -369,6 +375,20 @@ code {
   min-height: 220px;
 }
 
+.saveFlow {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(280px, 1fr) auto;
+}
+
+.saveActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 @media (max-width: 1050px) {
   .topbar {
     grid-template-columns: 1fr;
@@ -383,8 +403,13 @@ code {
   }
 
   .sessionGrid,
+  .saveFlow,
   .results {
     grid-template-columns: 1fr;
+  }
+
+  .saveActions {
+    justify-content: flex-start;
   }
 }
 

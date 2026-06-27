@@ -88,11 +88,60 @@ def test_draft_session_note_and_save_path(tmp_path):
     draft = services.draft_session_note("Forest escape and Haiiro search.", tmp_path)
     assert draft["id"].startswith("session-18-")
     assert "Forest escape" in draft["markdown"]
+    assert draft["default_target_path"] == "Campaign Management/session-logs/18-forest-escape-and-haiiro-search.md"
 
-    saved = services.save_draft(draft["id"], "Campaign Management/session-logs/18-forest-escape.md", tmp_path)
+    target = "Campaign Management/session-logs/18-forest-escape.md"
+    preview = services.preview_draft_save(draft["id"], target, tmp_path)
+    assert preview["saved"] is False
+    assert preview["path"] == target
+    assert preview["target_exists"] is False
+    assert "Forest escape" in preview["markdown"]
+
+    edited = draft["markdown"].replace("Forest escape", "Edited forest escape")
+    edited_preview = services.preview_draft_save(draft["id"], target, tmp_path, markdown=edited)
+    assert "Edited forest escape" in edited_preview["markdown"]
+
+    try:
+        services.save_draft(draft["id"], target, tmp_path)
+    except services.VaultError as exc:
+        assert "confirm=true" in str(exc)
+    else:
+        raise AssertionError("expected VaultError")
+
+    saved = services.save_draft(draft["id"], target, tmp_path, markdown=edited, confirm=True)
     assert saved["saved"] is True
     assert (tmp_path / saved["path"]).exists()
-    assert "Forest escape" in (tmp_path / saved["path"]).read_text()
+    assert "Edited forest escape" in (tmp_path / saved["path"]).read_text()
+    assert "Edited forest escape" in (tmp_path / draft["path"]).read_text()
+
+
+def test_scene_draft_has_canonical_save_flow(tmp_path):
+    seed_vault(tmp_path)
+    draft = services.draft_scene({"title": "Forest Choice", "purpose": "Pick route"}, tmp_path)
+    assert draft["default_target_path"] == "Campaign Management/01 - Live/Current Situation/forest-choice.md"
+
+    preview = services.preview_draft_save(draft["id"], draft["default_target_path"], tmp_path)
+    assert preview["saved"] is False
+    assert "Pick route" in preview["markdown"]
+
+    saved = services.save_draft(draft["id"], draft["default_target_path"], tmp_path, confirm=True)
+    assert saved["saved"] is True
+    assert (tmp_path / saved["path"]).exists()
+
+
+def test_canonical_save_rejects_drafts_target(tmp_path):
+    seed_vault(tmp_path)
+    draft = services.draft_scene({"title": "Bad Target"}, tmp_path)
+    try:
+        services.preview_draft_save(
+            draft["id"],
+            "Campaign Management/01 - Live/Current Situation/_drafts/bad-target.md",
+            tmp_path,
+        )
+    except services.VaultError as exc:
+        assert "cannot be inside _drafts" in str(exc)
+    else:
+        raise AssertionError("expected VaultError")
 
 
 def test_search_vault_finds_markdown(tmp_path):
