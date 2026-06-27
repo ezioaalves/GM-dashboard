@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
+import CustomSelect from "../components/CustomSelect.jsx";
+import MultiTagSelect from "../components/MultiTagSelect.jsx";
 
 const AREAS = ["lore", "mechanics", "foundry", "cosmetics", "skills", "docs", "housekeeping"];
 const STAGES = ["now", "next", "deferred", "done"];
@@ -16,16 +18,40 @@ export default function TicketModal({ ticket, defaultStage, onSave, onDelete, on
     area: ticket.area || "docs",
     priority: ticket.priority || "med",
     stage: ticket.stage || defaultStage || "next",
-    parent_id: ticket.parent_id || "",
-    threads: (ticket.threads || []).join(", "),
-    depends_on: (ticket.depends_on || []).join(", "),
+    parent_id: ticket.parent_id || null,
+    threads: ticket.threads || [],
+    depends_on: ticket.depends_on || [],
     next_action: ticket.next_action || "",
     resume_note: ticket.resume_note || "",
     resolution: ticket.resolution || "",
     body: ticket.body || "",
   });
 
+  const [threadOptions, setThreadOptions] = useState([]);
+  const [ticketOptions, setTicketOptions] = useState([]);
+
+  useEffect(() => {
+    fetch("/api/threads")
+      .then((r) => r.json())
+      .then((data) => setThreadOptions(data.map((t) => ({ value: t.id, label: t.title || t.id }))))
+      .catch(() => {});
+    fetch("/api/tickets")
+      .then((r) => r.json())
+      .then((data) =>
+        setTicketOptions(
+          data
+            .filter((t) => t.id !== ticket.id)
+            .map((t) => ({ value: t.id, label: t.title || t.id }))
+        )
+      )
+      .catch(() => {});
+  }, [ticket.id]);
+
   function field(key) {
+    return (val) => setForm((f) => ({ ...f, [key]: val }));
+  }
+
+  function fieldEvent(key) {
     return (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   }
 
@@ -33,11 +59,9 @@ export default function TicketModal({ ticket, defaultStage, onSave, onDelete, on
     e.preventDefault();
     const data = {
       ...form,
-      threads: form.threads.split(",").map((s) => s.trim()).filter(Boolean),
-      depends_on: form.depends_on.split(",").map((s) => s.trim()).filter(Boolean),
-      parent_id: form.parent_id.trim() || null,
+      parent_id: form.parent_id || null,
     };
-    if (!isEdit) delete data.id; // let server generate if blank
+    if (!isEdit) delete data.id;
     if (isEdit) data.id = ticket.id;
     onSave(data);
   }
@@ -55,65 +79,72 @@ export default function TicketModal({ ticket, defaultStage, onSave, onDelete, on
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <label className="field span-all">
             <span>Title *</span>
-            <input value={form.title} onChange={field("title")} required />
+            <input value={form.title} onChange={fieldEvent("title")} required />
           </label>
 
           <div className="ticket-form-grid">
             <label className="field">
               <span>Stage</span>
-              <select className="field-input" value={form.stage} onChange={field("stage")}>
-                {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <CustomSelect value={form.stage} onChange={field("stage")} options={STAGES} />
             </label>
             <label className="field">
               <span>Status</span>
-              <select className="field-input" value={form.status} onChange={field("status")}>
-                {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <CustomSelect value={form.status} onChange={field("status")} options={STATUSES} />
             </label>
             <label className="field">
               <span>Area</span>
-              <select className="field-input" value={form.area} onChange={field("area")}>
-                {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
-              </select>
+              <CustomSelect value={form.area} onChange={field("area")} options={AREAS} />
             </label>
             <label className="field">
               <span>Priority</span>
-              <select className="field-input" value={form.priority} onChange={field("priority")}>
-                {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+              <CustomSelect value={form.priority} onChange={field("priority")} options={PRIORITIES} />
             </label>
           </div>
 
           <label className="field">
             <span>Next action</span>
-            <input value={form.next_action} onChange={field("next_action")} placeholder="Concrete next step to resume" />
+            <input value={form.next_action} onChange={fieldEvent("next_action")} placeholder="Concrete next step to resume" />
           </label>
 
           <label className="field">
             <span>Resume note</span>
-            <input value={form.resume_note} onChange={field("resume_note")} placeholder="Short context for returning to this" />
+            <input value={form.resume_note} onChange={fieldEvent("resume_note")} placeholder="Short context for returning to this" />
           </label>
 
           <label className="field">
-            <span>Threads (comma-separated IDs)</span>
-            <input value={form.threads} onChange={field("threads")} placeholder="shadowlands-escalation, onimusha-team-identity" />
+            <span>Threads</span>
+            <MultiTagSelect
+              values={form.threads}
+              onChange={field("threads")}
+              options={threadOptions}
+              placeholder="Search threads…"
+            />
           </label>
 
           <label className="field">
-            <span>Depends on (comma-separated IDs)</span>
-            <input value={form.depends_on} onChange={field("depends_on")} placeholder="some-other-ticket-id" />
+            <span>Depends on</span>
+            <MultiTagSelect
+              values={form.depends_on}
+              onChange={field("depends_on")}
+              options={ticketOptions}
+              placeholder="Search tickets…"
+            />
           </label>
 
           <label className="field">
-            <span>Parent ticket ID</span>
-            <input value={form.parent_id} onChange={field("parent_id")} placeholder="parent-ticket-id" />
+            <span>Parent ticket</span>
+            <CustomSelect
+              value={form.parent_id || ""}
+              onChange={(v) => setForm((f) => ({ ...f, parent_id: v || null }))}
+              options={[{ value: "", label: "— none —" }, ...ticketOptions]}
+              placeholder="— none —"
+            />
           </label>
 
           {form.status === "done" || form.status === "dropped" ? (
             <label className="field">
               <span>Resolution</span>
-              <input value={form.resolution} onChange={field("resolution")} placeholder="One-line resolution summary" />
+              <input value={form.resolution} onChange={fieldEvent("resolution")} placeholder="One-line resolution summary" />
             </label>
           ) : null}
 
@@ -121,7 +152,7 @@ export default function TicketModal({ ticket, defaultStage, onSave, onDelete, on
             <span>Body (Markdown)</span>
             <textarea
               value={form.body}
-              onChange={field("body")}
+              onChange={fieldEvent("body")}
               style={{ minHeight: 120 }}
               placeholder="Description, acceptance criteria, notes…"
             />

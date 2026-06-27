@@ -245,6 +245,29 @@ def first_paragraph(body: str) -> str:
     return paragraphs[1] if paragraphs and paragraphs[0].startswith("#") and len(paragraphs) > 1 else (paragraphs[0] if paragraphs else "")
 
 
+THREADS = Path("Campaign Management/authorial/threads")
+
+
+def thread_files(vault: Path) -> list[dict[str, Any]]:
+    threads_dir = vault / THREADS
+    if not threads_dir.exists():
+        return []
+    result = []
+    for path in sorted(threads_dir.glob("*.md")):
+        if "_drafts" in path.parts or path.name.startswith("_"):
+            continue
+        try:
+            fm, _ = read_markdown(path)
+            result.append({
+                "id": fm.get("id", path.stem),
+                "title": fm.get("title", path.stem),
+                "status": fm.get("status", "active"),
+            })
+        except Exception:
+            pass
+    return result
+
+
 def cockpit_session(vault: Path | None = None) -> dict[str, Any]:
     root = vault or find_vault_root()
     latest = latest_session_log(root)

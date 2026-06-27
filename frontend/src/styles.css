@@ -729,3 +729,107 @@ select.field-input {
   font-size: 13px;
   width: 100%;
 }
+
+/* ── Custom Select ─────────────────────────────────── */
+.custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select-trigger {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #dce8de;
+  cursor: pointer;
+  text-align: left;
+}
+.custom-select-trigger:hover { border-color: rgba(255,255,255,0.3); }
+.custom-select-trigger.open { border-color: #5a8a6a; }
+
+.custom-select-arrow { opacity: 0.5; font-size: 11px; }
+
+.custom-select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: #1e2420;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 4px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.custom-select-option {
+  padding: 7px 12px;
+  font-size: 13px;
+  color: #c8d9cc;
+  cursor: pointer;
+}
+.custom-select-option:hover,
+.custom-select-option.selected { background: rgba(90,138,106,0.25); color: #dce8de; }
+
+/* ── Multi-Tag Select ──────────────────────────────── */
+.multi-tag-select {
+  position: relative;
+  width: 100%;
+}
+
+.multi-tag-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-height: 34px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: text;
+}
+.multi-tag-input-row:focus-within { border-color: #5a8a6a; }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(90,138,106,0.3);
+  border: 1px solid rgba(90,138,106,0.5);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: #b8d4bc;
+}
+
+.tag-remove {
+  background: none;
+  border: none;
+  color: #8fa8a0;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 1px;
+}
+.tag-remove:hover { color: #dce8de; }
+
+.tag-input {
+  flex: 1;
+  min-width: 80px;
+  background: none;
+  border: none;
+  outline: none;
+  color: #dce8de;
+  font-size: 13px;
+  padding: 2px 0;
+}

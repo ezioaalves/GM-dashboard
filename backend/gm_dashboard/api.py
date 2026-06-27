@@ -101,6 +101,11 @@ def preview_draft_save(draft_id: str, payload: SaveDraftRequest) -> dict[str, An
     return handle(services.preview_draft_save, draft_id, payload.target_path, markdown=payload.markdown)
 
 
+@app.get("/api/threads")
+def threads() -> list[dict]:
+    return handle(lambda: services.thread_files(services.find_vault_root()))
+
+
 @app.get("/api/foundry/status")
 def foundry_status() -> dict[str, Any]:
     return handle(lambda: services.foundry_status(services.find_vault_root()))
