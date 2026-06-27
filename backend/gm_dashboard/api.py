@@ -25,12 +25,32 @@ class SessionNoteRequest(BaseModel):
 
 class SceneRequest(BaseModel):
     title: str
+    type: str = ""
+    cuttable: bool = False
     purpose: str = ""
-    cast: list[str] = []
-    clue: str = ""
+    pc_pressure: str = ""
+    entry_pressure: str = ""
+    exit_condition: str = ""
+    cast: list[str] | str = []
+    location: str = ""
     clock: str = ""
-    foundry_needs: list[str] = []
+    core_clue: str = ""
+    superior_clue: str = ""
+    optional_clue: str = ""
+    false_lead: str = ""
+    opening_image: str = ""
+    sensory_words: str = ""
+    interactable_objects: str = ""
+    rules_likely: str = ""
+    foundry_needs: list[str] | str = []
+    replacement_route: str = ""
+    if_succeed: str = ""
+    if_fail: str = ""
+    if_ignore: str = ""
+    if_short: str = ""
     notes: str = ""
+    pinned_material: list[dict] = []
+    thread_ids: list[str] = []
 
 
 class SaveDraftRequest(BaseModel):

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Eye, FileDiff, Link, NotebookPen, Plus, Save, Search, ShieldCheck, X } from "lucide-react";
 import { marked } from "marked";
 import KanbanBoard from "./tickets/KanbanBoard";
+import QuickScene from "./QuickScene";
 import "./styles.css";
 
 const columns = [
@@ -26,11 +27,6 @@ function App() {
   const [draftText, setDraftText] = useState("");
   const [sessionTarget, setSessionTarget] = useState("");
   const [sessionSavePreview, setSessionSavePreview] = useState(null);
-  const [scene, setScene] = useState({ title: "", purpose: "", cast: "", clue: "", clock: "", foundry_needs: "", notes: "" });
-  const [sceneDraft, setSceneDraft] = useState(null);
-  const [sceneText, setSceneText] = useState("");
-  const [sceneTarget, setSceneTarget] = useState("");
-  const [sceneSavePreview, setSceneSavePreview] = useState(null);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [foundry, setFoundry] = useState(null);
@@ -90,24 +86,6 @@ function App() {
     });
   }
 
-  async function quickScene() {
-    await runAction("Creating scene draft...", async () => {
-      const json = await postJson("/api/capture/scene", {
-        title: scene.title || "Untitled Scene",
-        purpose: scene.purpose,
-        cast: splitList(scene.cast),
-        clue: scene.clue,
-        clock: scene.clock,
-        foundry_needs: splitList(scene.foundry_needs),
-        notes: scene.notes,
-      });
-      setSceneDraft(json);
-      setSceneText(json.markdown);
-      setSceneTarget(json.default_target_path);
-      setSceneSavePreview(null);
-      setStatus(`Scene draft written to ${json.path}`);
-    });
-  }
 
   async function runSearch() {
     await runAction("Searching vault...", async () => {
@@ -380,52 +358,11 @@ function App() {
         )}
 
         {activeTool === "scene" && (
-          <div className="toolPanel">
-            <div className="panelHeader">
-              <div>
-                <h2>Quick Scene</h2>
-                <p>Compact card for a runnable beat: purpose, cast, clue, clock, and Foundry needs.</p>
-              </div>
-              <button onClick={quickScene}><Plus size={16} /> Create Scene Draft</button>
-            </div>
-            <div className="formGrid">
-              <Input label="Title" value={scene.title} onChange={(value) => setScene({ ...scene, title: value })} />
-              <Input label="Cast" value={scene.cast} onChange={(value) => setScene({ ...scene, cast: value })} placeholder="Dan, Ikazuchi, Suigin" />
-              <Input label="Purpose" value={scene.purpose} onChange={(value) => setScene({ ...scene, purpose: value })} />
-              <Input label="Clock/thread" value={scene.clock} onChange={(value) => setScene({ ...scene, clock: value })} />
-              <Input label="Clue" value={scene.clue} onChange={(value) => setScene({ ...scene, clue: value })} />
-              <Input label="Foundry needs" value={scene.foundry_needs} onChange={(value) => setScene({ ...scene, foundry_needs: value })} placeholder="map, tokens, handout" />
-              <label className="field spanAll">
-                <span>Notes</span>
-                <textarea value={scene.notes} onChange={(e) => setScene({ ...scene, notes: e.target.value })} />
-              </label>
-            </div>
-            {sceneDraft && (
-              <div className="draftGrid">
-                <label className="field">
-                  <span>Editable Scene Draft - {sceneDraft.path}</span>
-                  <textarea value={sceneText} onChange={(e) => setSceneText(e.target.value)} />
-                </label>
-                <label className="field">
-                  <span>Preview</span>
-                  <pre>{sceneText}</pre>
-                </label>
-                <div className="saveFlow diffBox">
-                  <Input label="Canonical target path" value={sceneTarget} onChange={setSceneTarget} />
-                  <div className="saveActions">
-                    <button onClick={() => previewDraft(sceneDraft, sceneTarget, sceneText, setSceneSavePreview)}><Eye size={16} /> Preview Save</button>
-                    <button onClick={() => saveDraft(sceneDraft, sceneTarget, sceneText, setSceneSavePreview)}><Save size={16} /> Confirm Save</button>
-                  </div>
-                </div>
-                {sceneSavePreview && (
-                  <label className="field diffBox">
-                    <span>Canonical Diff</span>
-                    <pre>{sceneSavePreview.diff}</pre>
-                  </label>
-                )}
-              </div>
-            )}
-          </div>
+          <QuickScene
+            onStatusChange={setStatus}
+            onErrorChange={setError}
+            runAction={runAction}
+          />
         )}
 
         {activeTool === "search" && (

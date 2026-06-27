@@ -541,21 +541,164 @@ def draft_scene(payload: dict[str, Any], vault: Path | None = None) -> dict[str,
     root = vault or find_vault_root()
     draft_id = f"scene-{uuid.uuid4().hex[:8]}"
     title = payload.get("title") or "Untitled Scene"
-    markdown = f"""# {title}
 
-- **Purpose:** {payload.get("purpose", "")}
-- **Cast:** {", ".join(payload.get("cast") or [])}
-- **Clue:** {payload.get("clue", "")}
-- **Clock/thread:** {payload.get("clock", "")}
-- **Foundry needs:** {", ".join(payload.get("foundry_needs") or [])}
+    # Extract all fields from payload
+    scene_type = payload.get("type", "")
+    cuttable = payload.get("cuttable", False)
+    purpose = payload.get("purpose", "")
+    pc_pressure = payload.get("pc_pressure", "")
+    entry_pressure = payload.get("entry_pressure", "")
+    exit_condition = payload.get("exit_condition", "")
+    cast_list = payload.get("cast", "")
+    if isinstance(cast_list, list):
+        cast_list = ", ".join(cast_list)
+    location = payload.get("location", "")
+    clock_thread = payload.get("clock", "")
+    core_clue = payload.get("core_clue", "")
+    superior_clue = payload.get("superior_clue", "")
+    optional_clue = payload.get("optional_clue", "")
+    false_lead = payload.get("false_lead", "")
+    opening_image = payload.get("opening_image", "")
+    sensory_words = payload.get("sensory_words", "")
+    interactable_objects = payload.get("interactable_objects", "")
+    rules_likely = payload.get("rules_likely", "")
+    foundry_needs = payload.get("foundry_needs", "")
+    if isinstance(foundry_needs, list):
+        foundry_needs = ", ".join(foundry_needs)
+    replacement_route = payload.get("replacement_route", "")
+    if_succeed = payload.get("if_succeed", "")
+    if_fail = payload.get("if_fail", "")
+    if_ignore = payload.get("if_ignore", "")
+    if_short = payload.get("if_short", "")
+    notes = payload.get("notes", "")
+    pinned_material = payload.get("pinned_material", [])
+    thread_ids = payload.get("thread_ids", [])
 
-## Notes
+    # Build Scene Card markdown (only include non-empty fields)
+    md_lines = [f"## Scene: {title}\n"]
 
-{payload.get("notes", "")}
-"""
+    # Scene metadata section
+    if scene_type:
+        md_lines.append(f"Type: {scene_type}")
+    if purpose:
+        md_lines.append(f"Purpose: {purpose}")
+    if pc_pressure:
+        md_lines.append(f"PC pressure: {pc_pressure}")
+    if clock_thread:
+        md_lines.append(f"Clock or thread: {clock_thread}")
+    if location:
+        md_lines.append(f"Location: {location}")
+    if cast_list:
+        md_lines.append(f"Cast: {cast_list}")
+    if cuttable:
+        md_lines.append("Cuttable: yes")
+
+    md_lines.append("")  # blank line separator
+
+    # Entry/exit section
+    if entry_pressure:
+        md_lines.append(f"Entry pressure: {entry_pressure}")
+    if exit_condition:
+        md_lines.append(f"Exit condition: {exit_condition}")
+
+    md_lines.append("")
+
+    # Sensory prep section
+    if opening_image:
+        md_lines.append(f"Opening image: {opening_image}")
+    if interactable_objects:
+        md_lines.append(f"Interactable objects: {interactable_objects}")
+    if sensory_words:
+        md_lines.append(f"Sensory words: {sensory_words}")
+    if rules_likely:
+        md_lines.append(f"Rules likely: {rules_likely}")
+
+    md_lines.append("")
+
+    # Clue structure section
+    if core_clue:
+        md_lines.append(f"Core information: {core_clue}")
+    if superior_clue:
+        md_lines.append(f"Superior information: {superior_clue}")
+    if optional_clue:
+        md_lines.append(f"Optional information: {optional_clue}")
+    if false_lead:
+        md_lines.append(f"False lead risk: {false_lead}")
+
+    md_lines.append("")
+
+    # Contingencies section
+    if if_succeed:
+        md_lines.append(f"If PCs succeed: {if_succeed}")
+    if if_fail:
+        md_lines.append(f"If PCs fail: {if_fail}")
+    if if_ignore:
+        md_lines.append(f"If PCs ignore it: {if_ignore}")
+    if if_short:
+        md_lines.append(f"If time is short: {if_short}")
+    if replacement_route:
+        md_lines.append(f"Replacement route: {replacement_route}")
+
+    md_lines.append("")
+
+    # Foundry needs
+    if foundry_needs:
+        md_lines.append(f"Foundry needs: {foundry_needs}")
+
+    # Notes section
+    if notes:
+        md_lines.append("\n## Notes\n")
+        md_lines.append(notes)
+
+    # Attached material section
+    if pinned_material:
+        md_lines.append("\n## Attached Material\n")
+        for item in pinned_material:
+            title_pin = item.get("title", "")
+            path_pin = item.get("path", "")
+            if path_pin:
+                md_lines.append(f"- [[{title_pin}]] — `{path_pin}`")
+            elif title_pin:
+                md_lines.append(f"- {title_pin}")
+
+    markdown = "\n".join(md_lines)
+
+    # Write markdown file
     path = root / "Campaign Management" / "01 - Live" / "Current Situation" / "_drafts" / f"{draft_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(markdown)
+
+    # Write to database
+    from .db.get_db import get_connection
+    import json
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO scenes (
+                id, title, type, cuttable, purpose, pc_pressure, entry_pressure, exit_condition,
+                cast_list, location, clock_thread, core_clue, superior_clue, optional_clue, false_lead,
+                opening_image, sensory_words, interactable_objects, rules_likely, foundry_needs,
+                replacement_route, if_succeed, if_fail, if_ignore, if_short, notes, pinned_material,
+                md_path, thread_ids
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                draft_id, title, scene_type or None, cuttable, purpose or None, pc_pressure or None,
+                entry_pressure or None, exit_condition or None, cast_list or None, location or None,
+                clock_thread or None, core_clue or None, superior_clue or None, optional_clue or None,
+                false_lead or None, opening_image or None, sensory_words or None, interactable_objects or None,
+                rules_likely or None, foundry_needs or None, replacement_route or None, if_succeed or None,
+                if_fail or None, if_ignore or None, if_short or None, notes or None,
+                json.dumps(pinned_material) if pinned_material else None,
+                relative(root, path), thread_ids if thread_ids else None
+            )
+        )
+    finally:
+        cur.close()
+        conn.close()
+
     return {
         "id": draft_id,
         "type": "scene",
