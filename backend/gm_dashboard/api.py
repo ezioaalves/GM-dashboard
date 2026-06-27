@@ -47,6 +47,11 @@ def get_cockpit_session() -> dict[str, Any]:
     return handle(services.cockpit_session)
 
 
+@app.get("/api/capture/session-note/context")
+def capture_session_note_context() -> dict[str, Any]:
+    return handle(lambda: services.session_note_context())
+
+
 @app.post("/api/capture/session-note")
 def capture_session_note(payload: SessionNoteRequest) -> dict[str, Any]:
     return handle(services.draft_session_note, payload.memory)

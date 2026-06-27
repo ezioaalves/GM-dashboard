@@ -172,3 +172,64 @@ def test_open_markdown_rejects_path_escape(tmp_path):
       assert "escapes vault" in str(exc)
     else:
       raise AssertionError("expected VaultError")
+
+
+def test_session_note_context_no_threads_dir(tmp_path):
+    seed_vault(tmp_path)
+    ctx = services.session_note_context(tmp_path)
+    assert ctx["latest_session"]["session"] == 17
+    assert ctx["npc_list"] == ["Kaguya_Haiiro"]
+    assert ctx["live_prep_excerpt"].startswith("# stale prep")
+    assert ctx["active_threads"] == []
+
+
+def test_session_note_context_surfaces_active_threads(tmp_path):
+    seed_vault(tmp_path)
+    write(
+        tmp_path / "Campaign Management/authorial/threads/onimusha.md",
+        """---
+schema_version: 1
+id: onimusha-team-identity
+title: The Onimusha
+status: active
+next_move: What will they do next?
+---
+
+# The Onimusha
+""",
+    )
+    ctx = services.session_note_context(tmp_path)
+    assert len(ctx["active_threads"]) == 1
+    assert ctx["active_threads"][0]["id"] == "onimusha-team-identity"
+    assert ctx["active_threads"][0]["next_move"] == "What will they do next?"
+
+
+def test_session_note_context_inactive_threads_excluded(tmp_path):
+    seed_vault(tmp_path)
+    write(
+        tmp_path / "Campaign Management/authorial/threads/closed.md",
+        """---
+id: closed-thread
+title: Old Thread
+status: resolved
+next_move: ""
+---
+""",
+    )
+    ctx = services.session_note_context(tmp_path)
+    assert ctx["active_threads"] == []
+
+
+def test_session_note_context_missing_live_prep(tmp_path):
+    write(
+        tmp_path / "Campaign Management/session-logs/17-test.md",
+        """---
+schema_version: 1
+session: 17
+date: 2026-06-15
+title: Test
+---
+""",
+    )
+    ctx = services.session_note_context(tmp_path)
+    assert ctx["live_prep_excerpt"] == ""

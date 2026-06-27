@@ -167,6 +167,43 @@ def foundry_status(vault: Path) -> dict[str, Any]:
     }
 
 
+def session_note_context(vault: Path | None = None) -> dict[str, Any]:
+    root = vault or find_vault_root()
+    try:
+        latest = latest_session_log(root)
+    except VaultError:
+        latest = None
+
+    live_prep_path = root / LIVE_PREP
+    live_prep_excerpt = live_prep_path.read_text()[:2000] if live_prep_path.exists() else ""
+
+    threads_dir = root / "Campaign Management" / "authorial" / "threads"
+    active_threads: list[dict[str, str]] = []
+    if threads_dir.exists():
+        for path in sorted(threads_dir.glob("*.md")):
+            if "_drafts" in path.parts:
+                continue
+            try:
+                fm, _ = read_markdown(path)
+            except Exception:
+                continue
+            if fm.get("status") == "active":
+                active_threads.append({
+                    "id": str(fm.get("id", path.stem)),
+                    "title": str(fm.get("title", path.stem)),
+                    "status": str(fm.get("status", "")),
+                    "next_move": str(fm.get("next_move", "")),
+                })
+
+    npc_list: list[str] = latest.get("npcs_present", []) if latest else []
+    return {
+        "latest_session": latest,
+        "live_prep_excerpt": live_prep_excerpt,
+        "active_threads": active_threads,
+        "npc_list": npc_list,
+    }
+
+
 def ticket_files(vault: Path) -> list[dict[str, Any]]:
     out = []
     for path in sorted((vault / TICKETS).glob("*.md")):
