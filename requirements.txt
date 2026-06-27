@@ -3,4 +3,5 @@ uvicorn[standard]>=0.30
 PyYAML>=6.0
 python-multipart>=0.0.9
 psycopg2-binary>=2.9
+httpx>=0.25
 
