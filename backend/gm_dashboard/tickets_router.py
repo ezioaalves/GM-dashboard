@@ -206,6 +206,12 @@ def create_ticket(payload: TicketCreate) -> dict:
 
 @router.put("/tickets/{ticket_id}")
 def update_ticket(ticket_id: str, payload: TicketUpdate) -> dict:
+    if payload.area not in VALID_AREAS:
+        raise HTTPException(status_code=422, detail=f"Invalid area: {payload.area}")
+    if payload.stage not in VALID_STAGES:
+        raise HTTPException(status_code=422, detail=f"Invalid stage: {payload.stage}")
+    if payload.status not in VALID_STATUSES:
+        raise HTTPException(status_code=422, detail=f"Invalid status: {payload.status}")
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

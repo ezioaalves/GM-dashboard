@@ -18,7 +18,7 @@ const PRIORITY_DOT = {
   low: { color: "#6a6a6a", label: "low" },
 };
 
-export default function TicketCard({ ticket, onClick }) {
+export default function TicketCard({ ticket, onClick, isDraggingRef }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: ticket.id });
 
@@ -38,7 +38,7 @@ export default function TicketCard({ ticket, onClick }) {
       className="ticket-card"
       {...attributes}
       {...listeners}
-      onClick={onClick}
+      onClick={() => { if (!isDraggingRef?.current) onClick(); }}
     >
       <div className="ticket-card-header">
         <span

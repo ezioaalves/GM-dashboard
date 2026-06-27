@@ -32,6 +32,7 @@ export default function KanbanBoard() {
   const [error, setError] = useState("");
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const isDraggingRef = React.useRef(false);
 
   const loadTickets = useCallback(async () => {
     try {
@@ -123,7 +124,15 @@ export default function KanbanBoard() {
       {error && (
         <p style={{ color: "#e57373", fontSize: 13, marginBottom: 8 }}>{error}</p>
       )}
-      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={() => { isDraggingRef.current = true; }}
+        onDragEnd={(event) => {
+          handleDragEnd(event);
+          setTimeout(() => { isDraggingRef.current = false; }, 0);
+        }}
+      >
         <div className="kanban-board">
           {LANES.map(([stage, label]) => (
             <KanbanColumn
@@ -133,6 +142,7 @@ export default function KanbanBoard() {
               tickets={columns[stage]}
               onAdd={openCreate}
               onCardClick={openEdit}
+              isDraggingRef={isDraggingRef}
             />
           ))}
         </div>

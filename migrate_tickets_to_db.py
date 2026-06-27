@@ -118,8 +118,9 @@ def main(apply: bool) -> None:
     conn.autocommit = True
     inserted = 0
     skipped = 0
+    error_paths = set()
     with conn.cursor() as cur:
-        for _, t in tickets:
+        for path, t in tickets:
             try:
                 cur.execute(
                     """
@@ -143,14 +144,18 @@ def main(apply: bool) -> None:
                     print(f"  SKIP (already exists): {t['id']}")
             except Exception as exc:
                 print(f"  ERROR inserting {t['id']}: {exc}")
+                error_paths.add(path)
     conn.close()
     print(f"\nInserted {inserted} tickets ({skipped} skipped — already in DB).")
 
     # Delete source .md files
     print("\nDeleting .md ticket files...")
     for path, _ in tickets:
-        path.unlink()
-        print(f"  deleted {path.name}")
+        if path not in error_paths:
+            path.unlink()
+            print(f"  deleted {path.name}")
+        else:
+            print(f"  KEPT (insert failed): {path.name}")
 
     # Delete automation scripts
     print("\nDeleting operational automation scripts...")

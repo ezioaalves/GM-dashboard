@@ -188,3 +188,12 @@ def test_delete_ticket():
 def test_delete_ticket_not_found():
     res = client.delete("/api/tickets/ghost")
     assert res.status_code == 404
+
+
+def test_update_ticket_invalid_area():
+    seed_ticket()
+    res = client.put("/api/tickets/test-ticket", json={
+        "title": "X", "status": "open", "area": "bogus",
+        "priority": "med", "stage": "next",
+    })
+    assert res.status_code == 422

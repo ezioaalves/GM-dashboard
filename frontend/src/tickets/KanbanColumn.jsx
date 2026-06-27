@@ -3,7 +3,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import TicketCard from "./TicketCard";
 
-export default function KanbanColumn({ stage, label, tickets, onAdd, onCardClick }) {
+export default function KanbanColumn({ stage, label, tickets, onAdd, onCardClick, isDraggingRef }) {
   const { setNodeRef } = useDroppable({ id: stage });
 
   return (
@@ -22,6 +22,7 @@ export default function KanbanColumn({ stage, label, tickets, onAdd, onCardClick
               key={ticket.id}
               ticket={ticket}
               onClick={() => onCardClick(ticket)}
+              isDraggingRef={isDraggingRef}
             />
           ))}
         </div>
