@@ -1,12 +1,23 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Link, Search, ShieldCheck, X } from "lucide-react";
 import KanbanBoard from "./tickets/KanbanBoard";
 import SceneDeck from "./scenes/SceneDeck";
+import SessionDeck from "./sessions/SessionDeck";
 import SessionNote from "./SessionNote";
 import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
 import "./styles.css";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+    },
+  },
+});
 
 function stateClass(state) {
   return state === "fresh" || state === "configured"
@@ -17,8 +28,8 @@ function stateClass(state) {
 }
 
 function App() {
-  const [data, setData] = useState(null);
-  const [activeTool, setActiveTool] = useState("session-note");
+  const [data, setData] = useState<any>(null);
+  const [activeTool, setActiveTool] = useState("session-deck");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -83,7 +94,7 @@ function App() {
 
   if (!data) return <main className="shell"><p>Loading cockpit...</p></main>;
 
-  const freshness = Object.entries(data.freshness);
+  const freshness = Object.entries(data.freshness as Record<string, { state: string }>);
   const sessionDisplayName = data ? `Session ${data.latest_session.session}` : "—";
 
   return (
@@ -118,11 +129,9 @@ function App() {
           {activeTool === "session-note" && (
             <SessionNote
               onStatusChange={setStatus}
-              onErrorChange={setError}
               runAction={runAction}
             />
           )}
-
           {activeTool === "scene-deck" && (
             <SceneDeck
               onStatusChange={setStatus}
@@ -130,7 +139,13 @@ function App() {
               runAction={runAction}
             />
           )}
-
+          {activeTool === "session-deck" && (
+            <SessionDeck
+              onStatusChange={setStatus}
+              onErrorChange={setError}
+              runAction={runAction}
+            />
+          )}
           {activeTool === "search" && (
             <div className="toolPanel">
               <div className="panelHeader">
@@ -164,7 +179,6 @@ function App() {
               </div>
             </div>
           )}
-
           {activeTool === "tickets" && (
             <div className="toolPanel">
               <div className="panelHeader">
@@ -176,7 +190,6 @@ function App() {
               <KanbanBoard />
             </div>
           )}
-
           {activeTool === "foundry" && (
             <div className="toolPanel">
               <div className="panelHeader">
@@ -217,4 +230,8 @@ function App() {
 
 export default App;
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+  </QueryClientProvider>
+);
