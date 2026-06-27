@@ -57,3 +57,25 @@ CREATE TABLE IF NOT EXISTS sheet_records (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS tickets (
+  id           TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'open',
+  area         TEXT NOT NULL,
+  priority     TEXT NOT NULL DEFAULT 'med',
+  stage        TEXT NOT NULL DEFAULT 'next',
+  parent_id    TEXT REFERENCES tickets(id),
+  threads      TEXT[] DEFAULT '{}',
+  depends_on   TEXT[] DEFAULT '{}',
+  next_action  TEXT DEFAULT '',
+  resume_note  TEXT DEFAULT '',
+  source       TEXT DEFAULT 'manual',
+  introduced   DATE,
+  closed       DATE,
+  resolution   TEXT DEFAULT '',
+  review_after DATE,
+  body         TEXT DEFAULT '',
+  created_at   TIMESTAMPTZ DEFAULT now(),
+  updated_at   TIMESTAMPTZ DEFAULT now()
+);
+
