@@ -1,0 +1,439 @@
+from __future__ import annotations
+
+import difflib
+import os
+import re
+import sqlite3
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+SESSION_LOGS = Path("Campaign Management/session-logs")
+LIVE_PREP = Path("Campaign Management/01 - Live/Next_Session.md")
+ARC_CALENDAR = Path("Campaign Management/01 - Live/Current Arc/The Training Arc/Arc Calendar.md")
+OP_DASHBOARD = Path("Campaign Management/operational/operational-dashboard.md")
+OP_DB = Path("Campaign Management/operational/operational.db")
+TICKETS = Path("Campaign Management/operational/tickets")
+RAG_DB = Path("Creation Zone/automation_scripts/rag.db")
+FOUNDRY_ENV = Path("Creation Zone/automation_scripts/foundry/.env")
+
+
+class VaultError(Exception):
+    pass
+
+
+def find_vault_root(start: Path | None = None) -> Path:
+    env = os.environ.get("KAIHOU_VAULT_ROOT")
+    if env:
+        return Path(env).expanduser().resolve()
+
+    here = (start or Path(__file__)).resolve()
+    for path in [here, *here.parents]:
+        if (path / "Campaign Management").exists() and (path / "Creation Zone").exists():
+            return path
+    raise VaultError(f"could not locate Kaihou vault root from {here}")
+
+
+def split_frontmatter(text: str, source: Path) -> tuple[dict[str, Any], str]:
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.find("\n---", 4)
+    if end == -1:
+        raise VaultError(f"{source}: no closing frontmatter marker")
+    fm = yaml.safe_load(text[4:end]) or {}
+    if not isinstance(fm, dict):
+        raise VaultError(f"{source}: frontmatter is not a mapping")
+    return fm, text[end + 4 :].lstrip("\n")
+
+
+def read_markdown(path: Path) -> tuple[dict[str, Any], str]:
+    return split_frontmatter(path.read_text(), path)
+
+
+def relative(root: Path, path: Path) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()
+
+
+def latest_session_log(vault: Path) -> dict[str, Any]:
+    logs = []
+    for path in (vault / SESSION_LOGS).glob("*.md"):
+        if path.name.endswith(".secret.md") or "_drafts" in path.parts:
+            continue
+        fm, body = read_markdown(path)
+        session = fm.get("session")
+        if isinstance(session, int):
+            logs.append((session, path, fm, body))
+    if not logs:
+        raise VaultError("no session logs found")
+    session, path, fm, body = max(logs, key=lambda row: row[0])
+    return {
+        "session": session,
+        "title": fm.get("title", path.stem),
+        "date": str(fm.get("date", "")),
+        "path": relative(vault, path),
+        "body": body,
+        "summary": extract_section(body, "What happened"),
+        "notable_moments": bullets_from_section(body, "Notable moments"),
+        "npcs_present": fm.get("npcs_present", []),
+        "locations": fm.get("locations", []),
+        "threads": fm.get("threads", {}),
+        "has_secret": path.with_suffix(".secret.md").exists() or bool(fm.get("has_secret")),
+    }
+
+
+def extract_section(body: str, heading: str) -> str:
+    pattern = re.compile(rf"^##\s+{re.escape(heading)}\s*$", re.MULTILINE)
+    match = pattern.search(body)
+    if not match:
+        return ""
+    next_heading = re.search(r"^##\s+", body[match.end() :], re.MULTILINE)
+    end = match.end() + next_heading.start() if next_heading else len(body)
+    return body[match.end() : end].strip()
+
+
+def bullets_from_section(body: str, heading: str) -> list[str]:
+    section = extract_section(body, heading)
+    return [line[2:].strip() for line in section.splitlines() if line.startswith("- ")]
+
+
+def file_status(vault: Path, rel_path: Path, *, stale_after_days: int = 7) -> dict[str, Any]:
+    path = vault / rel_path
+    if not path.exists():
+        return {"name": rel_path.name, "path": rel_path.as_posix(), "state": "missing", "updated_at": None}
+    mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+    age_days = (datetime.now(UTC) - mtime).days
+    state = "fresh" if age_days <= stale_after_days else "stale"
+    return {
+        "name": rel_path.name,
+        "path": rel_path.as_posix(),
+        "state": state,
+        "updated_at": mtime.isoformat(),
+        "age_days": age_days,
+    }
+
+
+def sqlite_status(vault: Path, rel_path: Path, *, expected_table: str | None = None) -> dict[str, Any]:
+    status = file_status(vault, rel_path)
+    path = vault / rel_path
+    if status["state"] == "missing" or expected_table is None:
+        return status
+    try:
+        con = sqlite3.connect(path)
+        row = con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (expected_table,)
+        ).fetchone()
+        con.close()
+    except sqlite3.Error as exc:
+        status["state"] = "error"
+        status["detail"] = str(exc)
+        return status
+    if row is None:
+        status["state"] = "error"
+        status["detail"] = f"missing table {expected_table}"
+    return status
+
+
+def freshness(vault: Path) -> dict[str, Any]:
+    latest = latest_session_log(vault)
+    latest_status = file_status(vault, Path(latest["path"]), stale_after_days=14)
+    latest_status["session"] = latest["session"]
+    latest_status["title"] = latest["title"]
+    return {
+        "latest_log": latest_status,
+        "arc_cursor": file_status(vault, ARC_CALENDAR, stale_after_days=7),
+        "operational_dashboard": file_status(vault, OP_DASHBOARD, stale_after_days=2),
+        "operational_db": sqlite_status(vault, OP_DB, expected_table="tickets"),
+        "rag_index": sqlite_status(vault, RAG_DB),
+        "foundry": foundry_status(vault),
+    }
+
+
+def foundry_status(vault: Path) -> dict[str, Any]:
+    env_path = vault / FOUNDRY_ENV
+    if not env_path.exists():
+        return {"state": "unconfigured", "path": FOUNDRY_ENV.as_posix()}
+    configured = []
+    for line in env_path.read_text().splitlines():
+        if "=" in line and not line.strip().startswith("#"):
+            configured.append(line.split("=", 1)[0])
+    return {
+        "state": "configured" if configured else "unconfigured",
+        "path": FOUNDRY_ENV.as_posix(),
+        "detail": "Credentials are local only; connection checks stay explicit.",
+    }
+
+
+def ticket_files(vault: Path) -> list[dict[str, Any]]:
+    out = []
+    for path in sorted((vault / TICKETS).glob("*.md")):
+        if "_drafts" in path.parts:
+            continue
+        fm, body = read_markdown(path)
+        stage = fm.get("stage") or default_stage(fm.get("status"))
+        out.append({
+            "id": fm.get("id", path.stem),
+            "title": fm.get("title", path.stem),
+            "status": fm.get("status", "open"),
+            "stage": stage,
+            "next_action": fm.get("next_action", ""),
+            "resume_note": fm.get("resume_note", ""),
+            "review_after": str(fm.get("review_after", "")) if fm.get("review_after") else "",
+            "area": fm.get("area", ""),
+            "priority": fm.get("priority", "med"),
+            "path": relative(vault, path),
+            "body_excerpt": first_paragraph(body),
+        })
+    return out
+
+
+def default_stage(status: str | None) -> str:
+    if status == "in_progress":
+        return "now"
+    if status in {"done", "dropped"}:
+        return "done"
+    if status == "blocked":
+        return "deferred"
+    return "next"
+
+
+def first_paragraph(body: str) -> str:
+    paragraphs = [p.strip().replace("\n", " ") for p in body.split("\n\n") if p.strip()]
+    return paragraphs[1] if paragraphs and paragraphs[0].startswith("#") and len(paragraphs) > 1 else (paragraphs[0] if paragraphs else "")
+
+
+def cockpit_session(vault: Path | None = None) -> dict[str, Any]:
+    root = vault or find_vault_root()
+    latest = latest_session_log(root)
+    tickets = ticket_files(root)
+    active = [t for t in tickets if t["status"] in {"open", "in_progress", "blocked"}]
+    columns = {
+        "now": [
+            {
+                "id": "session-17-cliffhanger",
+                "title": "Ox 22 cliffhanger",
+                "detail": "Party is fleeing the Tetsu no Oni in hostile forest; Haiiro is missing.",
+                "source": latest["path"],
+            }
+        ],
+        "next": [
+            t for t in active
+            if t["stage"] == "next" and t["id"] != "complete-vault-housekeeping-cleanup"
+        ][:8],
+        "scene_deck": [
+            {
+                "id": "survive-the-forest",
+                "title": "Survive the forest",
+                "purpose": "Turn the retreat into choices: route, rescue Haiiro, or signal patrol support.",
+                "cast": ["Dan", "Ikazuchi", "Suigin", "Kaguya_Haiiro", "Tetsu no Oni"],
+                "clock": "Shadowlands escalation",
+                "foundry_needs": ["forest chase map", "Tetsu no Oni token", "aberration remnants"],
+            }
+        ],
+        "capture": [
+            {
+                "id": "quick-session-note",
+                "title": "Quick Session Note",
+                "detail": "Use memory plus stale prep to draft a canonical session log.",
+            },
+            {
+                "id": "quick-scene",
+                "title": "Quick Scene",
+                "detail": "Capture purpose, cast, clue, thread/clock, and Foundry needs.",
+            },
+        ],
+        "follow_up": [
+            t for t in active
+            if t["stage"] in {"now", "deferred"} or "webapp" in t["id"]
+        ][:8],
+    }
+    return {
+        "latest_session": latest,
+        "leave_off": columns["now"][0],
+        "freshness": freshness(root),
+        "columns": columns,
+    }
+
+
+def search_vault(q: str, vault: Path | None = None, *, limit: int = 20) -> list[dict[str, str]]:
+    root = vault or find_vault_root()
+    needle = q.lower().strip()
+    if not needle:
+        return []
+    matches = []
+    for base in ["Campaign Management", "Lore", "Mechanics"]:
+        for path in (root / base).rglob("*.md"):
+            if ".git" in path.parts or "_drafts" in path.parts:
+                continue
+            text = path.read_text(errors="ignore")
+            idx = text.lower().find(needle)
+            if idx == -1:
+                continue
+            start = max(0, idx - 80)
+            end = min(len(text), idx + len(q) + 120)
+            matches.append({
+                "path": relative(root, path),
+                "title": path.stem.replace("_", " "),
+                "snippet": " ".join(text[start:end].split()),
+            })
+            if len(matches) >= limit:
+                return matches
+    return matches
+
+
+def vault_markdown_file(path: str, vault: Path | None = None) -> dict[str, str]:
+    root = vault or find_vault_root()
+    target = resolve_vault_markdown(root, path)
+    text = target.read_text()
+    return {"path": relative(root, target), "markdown": text}
+
+
+def save_vault_markdown_file(path: str, markdown: str, vault: Path | None = None) -> dict[str, str]:
+    root = vault or find_vault_root()
+    target = resolve_vault_markdown(root, path)
+    old = target.read_text() if target.exists() else ""
+    target.write_text(markdown)
+    return {
+        "path": relative(root, target),
+        "diff": unified_diff(old, markdown, fromfile=path, tofile=path),
+    }
+
+
+def resolve_vault_markdown(root: Path, path: str) -> Path:
+    if not path:
+        raise VaultError("missing markdown path")
+    target = (root / path).resolve()
+    if root.resolve() not in [target, *target.parents]:
+        raise VaultError("path escapes vault")
+    if target.suffix != ".md":
+        raise VaultError("only Markdown files can be opened here")
+    allowed_roots = [
+        root / "Campaign Management",
+        root / "Lore",
+        root / "Mechanics",
+    ]
+    if not any(base.resolve() in [target, *target.parents] for base in allowed_roots):
+        raise VaultError("path is outside editable vault content roots")
+    if "_drafts" in target.parts or target.exists():
+        return target
+    raise VaultError(f"markdown file does not exist: {path}")
+
+
+def draft_session_note(memory: str, vault: Path | None = None) -> dict[str, Any]:
+    root = vault or find_vault_root()
+    latest = latest_session_log(root)
+    next_session = (root / LIVE_PREP).read_text() if (root / LIVE_PREP).exists() else ""
+    session_no = int(latest["session"]) + 1
+    title = derive_title(memory) or f"Session {session_no} Draft"
+    today = datetime.now().date().isoformat()
+    markdown = f"""---
+schema_version: 1
+session: {session_no}
+date: {today}
+title: "{title}"
+poles_advanced: []
+threads:
+  advanced: []
+  planted: []
+  resolved: []
+npcs_present: []
+locations: []
+has_secret: false
+---
+
+# Session {session_no} - {title}
+
+## What happened
+
+{memory.strip() or "[Add GM memory here.]"}
+
+## Continuity seed
+
+Previous played session left on Ox 22: party fleeing the Tetsu no Oni, Haiiro missing.
+
+## Prep source checked
+
+Last live prep file: `{LIVE_PREP.as_posix()}`.
+
+## Notable moments
+
+- [Add table moments.]
+
+## NPCs in play
+
+- [Add NPCs.]
+"""
+    draft_id = f"session-{session_no}-{uuid.uuid4().hex[:8]}"
+    path = root / SESSION_LOGS / "_drafts" / f"{draft_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(markdown)
+    return {
+        "id": draft_id,
+        "type": "session-log",
+        "path": relative(root, path),
+        "markdown": markdown,
+        "source": {
+            "latest_session": latest,
+            "live_prep_excerpt": next_session[:2000],
+        },
+        "diff": unified_diff("", markdown, fromfile="/dev/null", tofile=relative(root, path)),
+    }
+
+
+def derive_title(memory: str) -> str:
+    for line in memory.splitlines():
+        clean = line.strip().strip("# ")
+        if clean:
+            return clean[:80]
+    return ""
+
+
+def draft_scene(payload: dict[str, Any], vault: Path | None = None) -> dict[str, Any]:
+    root = vault or find_vault_root()
+    draft_id = f"scene-{uuid.uuid4().hex[:8]}"
+    title = payload.get("title") or "Untitled Scene"
+    markdown = f"""# {title}
+
+- **Purpose:** {payload.get("purpose", "")}
+- **Cast:** {", ".join(payload.get("cast") or [])}
+- **Clue:** {payload.get("clue", "")}
+- **Clock/thread:** {payload.get("clock", "")}
+- **Foundry needs:** {", ".join(payload.get("foundry_needs") or [])}
+
+## Notes
+
+{payload.get("notes", "")}
+"""
+    path = root / "Campaign Management" / "01 - Live" / "Current Situation" / "_drafts" / f"{draft_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(markdown)
+    return {"id": draft_id, "type": "scene", "path": relative(root, path), "markdown": markdown}
+
+
+def save_draft(draft_id: str, target_path: str, vault: Path | None = None) -> dict[str, Any]:
+    root = vault or find_vault_root()
+    candidates = list(root.glob(f"**/_drafts/{draft_id}.md"))
+    if not candidates:
+        raise VaultError(f"draft not found: {draft_id}")
+    target = (root / target_path).resolve()
+    if root.resolve() not in [target, *target.parents]:
+        raise VaultError("target path escapes vault")
+    old = target.read_text() if target.exists() else ""
+    new = candidates[0].read_text()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(new)
+    return {
+        "saved": True,
+        "path": relative(root, target),
+        "diff": unified_diff(old, new, fromfile=target_path, tofile=target_path),
+    }
+
+
+def unified_diff(old: str, new: str, *, fromfile: str, tofile: str) -> str:
+    return "\n".join(difflib.unified_diff(
+        old.splitlines(), new.splitlines(), fromfile=fromfile, tofile=tofile, lineterm=""
+    ))
