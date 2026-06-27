@@ -104,3 +104,87 @@ def test_get_ticket_by_id():
 def test_get_ticket_not_found():
     res = client.get("/api/tickets/does-not-exist")
     assert res.status_code == 404
+
+
+def test_create_ticket():
+    res = client.post("/api/tickets", json={
+        "title": "New Ticket",
+        "area": "docs",
+        "stage": "now",
+    })
+    assert res.status_code == 201
+    data = res.json()
+    assert data["title"] == "New Ticket"
+    assert data["stage"] == "now"
+    assert data["id"] == "new-ticket"
+
+
+def test_create_ticket_auto_dedup_id():
+    client.post("/api/tickets", json={"title": "Dup", "area": "docs"})
+    res = client.post("/api/tickets", json={"title": "Dup", "area": "docs"})
+    assert res.status_code == 201
+    assert res.json()["id"] == "dup-2"
+
+
+def test_create_ticket_custom_id():
+    res = client.post("/api/tickets", json={
+        "id": "my-custom-id",
+        "title": "Custom",
+        "area": "foundry",
+    })
+    assert res.status_code == 201
+    assert res.json()["id"] == "my-custom-id"
+
+
+def test_update_ticket():
+    seed_ticket()
+    res = client.put("/api/tickets/test-ticket", json={
+        "title": "Updated Title",
+        "status": "in_progress",
+        "area": "foundry",
+        "priority": "high",
+        "stage": "now",
+        "next_action": "Ship it",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["title"] == "Updated Title"
+    assert data["status"] == "in_progress"
+    assert data["area"] == "foundry"
+
+
+def test_update_ticket_not_found():
+    res = client.put("/api/tickets/ghost", json={
+        "title": "Ghost",
+        "status": "open",
+        "area": "docs",
+        "priority": "med",
+        "stage": "next",
+    })
+    assert res.status_code == 404
+
+
+def test_patch_stage():
+    seed_ticket({"stage": "next"})
+    res = client.patch("/api/tickets/test-ticket/stage", json={"stage": "now"})
+    assert res.status_code == 200
+    assert res.json()["stage"] == "now"
+
+
+def test_patch_stage_invalid():
+    seed_ticket()
+    res = client.patch("/api/tickets/test-ticket/stage", json={"stage": "bogus"})
+    assert res.status_code == 422
+
+
+def test_delete_ticket():
+    seed_ticket()
+    res = client.delete("/api/tickets/test-ticket")
+    assert res.status_code == 200
+    assert res.json()["deleted"] is True
+    assert client.get("/api/tickets/test-ticket").status_code == 404
+
+
+def test_delete_ticket_not_found():
+    res = client.delete("/api/tickets/ghost")
+    assert res.status_code == 404
