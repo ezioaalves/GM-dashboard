@@ -668,37 +668,6 @@ def draft_scene(payload: dict[str, Any], vault: Path | None = None) -> dict[str,
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(markdown)
 
-    # Write to database
-    from .db.get_db import get_connection
-    import json
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            """
-            INSERT INTO scenes (
-                id, title, type, cuttable, purpose, pc_pressure, entry_pressure, exit_condition,
-                cast_list, location, clock_thread, core_clue, superior_clue, optional_clue, false_lead,
-                opening_image, sensory_words, interactable_objects, rules_likely, foundry_needs,
-                replacement_route, if_succeed, if_fail, if_ignore, if_short, notes, pinned_material,
-                md_path, thread_ids
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                draft_id, title, scene_type or None, cuttable, purpose or None, pc_pressure or None,
-                entry_pressure or None, exit_condition or None, cast_list or None, location or None,
-                clock_thread or None, core_clue or None, superior_clue or None, optional_clue or None,
-                false_lead or None, opening_image or None, sensory_words or None, interactable_objects or None,
-                rules_likely or None, foundry_needs or None, replacement_route or None, if_succeed or None,
-                if_fail or None, if_ignore or None, if_short or None, notes or None,
-                json.dumps(pinned_material) if pinned_material else None,
-                relative(root, path), thread_ids if thread_ids else None
-            )
-        )
-    finally:
-        cur.close()
-        conn.close()
-
     return {
         "id": draft_id,
         "type": "scene",
