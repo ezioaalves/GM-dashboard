@@ -1,5 +1,345 @@
 import React, { useState } from "react";
-import { Eye, Plus, Save, X, Search } from "lucide-react";
+import { ChevronDown, Plus, Save, X, Search, Eye } from "lucide-react";
+
+function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPaths }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [selectedPath, setSelectedPath] = useState(null);
+  const [selectedContent, setSelectedContent] = useState("");
+
+  async function pinSearch() {
+    if (!query.trim()) return;
+    await runAction("Searching vault...", async () => {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=20`);
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+      setResults(json);
+      onStatusChange(`Found ${json.length} result${json.length === 1 ? "" : "s"}.`);
+    });
+  }
+
+  async function viewContent(path) {
+    await runAction(`Loading ${path}...`, async () => {
+      const res = await fetch(`/api/files/markdown?path=${encodeURIComponent(path)}`);
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+      setSelectedContent(json.markdown);
+      setSelectedPath(path);
+    });
+  }
+
+  function handlePin(result) {
+    onPin(result);
+    setResults(results.filter((r) => r.path !== result.path));
+    setSelectedPath(null);
+    setSelectedContent("");
+  }
+
+  if (!open) return null;
+
+  return (
+    <div style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.7)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 1000,
+    }}>
+      <div style={{
+        backgroundColor: "#1a1a1a",
+        borderRadius: 8,
+        border: "1px solid #555",
+        width: "90%",
+        maxWidth: 1200,
+        height: "80vh",
+        display: "flex",
+        flexDirection: "column",
+        padding: 20,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+          <h3 style={{ margin: 0 }}>Select Material to Pin</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc" }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search NPCs, locations, threads, clues..."
+            onKeyDown={(e) => e.key === "Enter" && pinSearch()}
+            style={{
+              flex: 1,
+              padding: "8px 12px",
+              backgroundColor: "#2a2a2a",
+              border: "1px solid #555",
+              color: "#ccc",
+              borderRadius: 4,
+            }}
+          />
+          <button onClick={pinSearch} style={{ padding: "8px 16px", backgroundColor: "#4a9d83", border: "none", color: "white", cursor: "pointer", borderRadius: 4 }}>
+            <Search size={16} /> Search
+          </button>
+        </div>
+
+        <div style={{ flex: 1, display: "flex", gap: 16, overflow: "hidden" }}>
+          {/* Results list */}
+          <div style={{
+            flex: "0 0 35%",
+            overflowY: "auto",
+            borderRight: "1px solid #555",
+            paddingRight: 12,
+          }}>
+            {results.length === 0 && query ? (
+              <p style={{ color: "#888", fontSize: 12 }}>No results found.</p>
+            ) : results.length === 0 ? (
+              <p style={{ color: "#888", fontSize: 12 }}>Type to search...</p>
+            ) : (
+              results.map((row) => {
+                const isPinned = pinnedPaths.includes(row.path);
+                return (
+                  <div
+                    key={row.path}
+                    style={{
+                      padding: 10,
+                      marginBottom: 8,
+                      backgroundColor: selectedPath === row.path ? "rgba(74,157,131,0.3)" : "rgba(100,100,100,0.1)",
+                      border: `1px solid ${selectedPath === row.path ? "#4a9d83" : "#555"}`,
+                      borderRadius: 4,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div onClick={() => viewContent(row.path)} style={{ marginBottom: 8 }}>
+                      <h4 style={{ margin: "0 0 4px 0", fontSize: 13 }}>{row.title}</h4>
+                      <p style={{ margin: "0 0 4px 0", fontSize: 11, color: "#aaa", lineHeight: 1.3 }}>{row.snippet}</p>
+                      <code style={{ fontSize: 9, color: "#888" }}>{row.path}</code>
+                    </div>
+                    <button
+                      onClick={() => handlePin(row)}
+                      disabled={isPinned}
+                      style={{
+                        width: "100%",
+                        padding: "6px 8px",
+                        fontSize: 12,
+                        backgroundColor: isPinned ? "#666" : "#4a9d83",
+                        border: "none",
+                        color: "white",
+                        cursor: isPinned ? "default" : "pointer",
+                        borderRadius: 3,
+                      }}
+                    >
+                      {isPinned ? "Already pinned" : "Pin"}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Content preview */}
+          <div style={{
+            flex: "0 0 65%",
+            overflowY: "auto",
+            paddingLeft: 12,
+          }}>
+            {selectedPath ? (
+              <div>
+                <h4 style={{ margin: "0 0 12px 0", wordBreak: "break-word" }}>{selectedPath}</h4>
+                <pre style={{
+                  backgroundColor: "#2a2a2a",
+                  border: "1px solid #555",
+                  borderRadius: 4,
+                  padding: 12,
+                  fontSize: 12,
+                  lineHeight: 1.4,
+                  maxHeight: "100%",
+                  overflow: "auto",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}>
+                  {selectedContent}
+                </pre>
+              </div>
+            ) : (
+              <p style={{ color: "#888", fontSize: 12 }}>Select a result to preview</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AutocompleteField({ label, value, onChange, onCreateNew, placeholder, suggestions }) {
+  const [open, setOpen] = useState(false);
+  const [inputValue, setInputValue] = useState("");
+
+  const filtered = suggestions.filter((s) => s.toLowerCase().includes(inputValue.toLowerCase()));
+  const hasMatch = filtered.some((s) => s.toLowerCase() === inputValue.toLowerCase());
+
+  function handleSelect(item) {
+    onChange([...value, item]);
+    setInputValue("");
+    setOpen(false);
+  }
+
+  function handleCreateNew() {
+    if (inputValue.trim()) {
+      onCreateNew(inputValue);
+      setInputValue("");
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      <label style={{ display: "block", marginBottom: 4 }}>
+        <span style={{ fontSize: 12, color: "#aaa" }}>{label}</span>
+      </label>
+
+      {/* Display selected items as tags */}
+      {value.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          {value.map((item) => (
+            <div
+              key={item}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "4px 8px",
+                backgroundColor: "rgba(74,157,131,0.2)",
+                border: "1px solid #4a9d83",
+                fontSize: 12,
+                borderRadius: 3,
+              }}
+            >
+              {item}
+              <button
+                onClick={() => onChange(value.filter((v) => v !== item))}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#aaa",
+                  padding: 0,
+                }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Input field */}
+      <div style={{ position: "relative" }}>
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => {
+            setInputValue(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          style={{
+            width: "100%",
+            padding: "6px 8px",
+            backgroundColor: "#2a2a2a",
+            border: "1px solid #555",
+            color: "#ccc",
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        />
+
+        {/* Dropdown */}
+        {open && inputValue && (
+          <div style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            backgroundColor: "#2a2a2a",
+            border: "1px solid #555",
+            borderTop: "none",
+            borderRadius: "0 0 4px 4px",
+            maxHeight: 200,
+            overflowY: "auto",
+            zIndex: 100,
+          }}>
+            {filtered.map((item) => (
+              <div
+                key={item}
+                onClick={() => handleSelect(item)}
+                style={{
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  borderBottom: "1px solid #444",
+                  fontSize: 12,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(74,157,131,0.2)")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              >
+                {item}
+              </div>
+            ))}
+            {!hasMatch && inputValue && (
+              <div
+                onClick={handleCreateNew}
+                style={{
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  backgroundColor: "rgba(74,157,131,0.1)",
+                  color: "#4a9d83",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  borderTop: "1px solid #555",
+                }}
+              >
+                + Create "{inputValue}"
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CollapsibleSection({ title, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)} style={{ marginBottom: 0 }}>
+      <summary
+        style={{
+          cursor: "pointer",
+          padding: "12px 0",
+          fontSize: 14,
+          fontWeight: 600,
+          color: "#ccc",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          userSelect: "none",
+          borderBottom: "1px solid #444",
+          marginBottom: open ? 16 : 0,
+        }}
+      >
+        <ChevronDown size={16} style={{ transform: open ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s" }} />
+        {title}
+      </summary>
+      <div style={{ paddingBottom: 16 }}>{children}</div>
+    </details>
+  );
+}
 
 export default function QuickScene({ onStatusChange, onErrorChange, runAction }) {
   const [scene, setScene] = useState({
@@ -10,9 +350,9 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
     pc_pressure: "",
     entry_pressure: "",
     exit_condition: "",
-    cast: "",
-    location: "",
-    clock: "",
+    cast: [],
+    location: [],
+    clock: [],
     core_clue: "",
     superior_clue: "",
     optional_clue: "",
@@ -31,12 +371,16 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
   });
 
   const [pinnedMaterial, setPinnedMaterial] = useState([]);
-  const [pinQuery, setPinQuery] = useState("");
-  const [pinResults, setPinResults] = useState([]);
+  const [pinsModalOpen, setPinsModalOpen] = useState(false);
   const [sceneDraft, setSceneDraft] = useState(null);
   const [sceneText, setSceneText] = useState("");
   const [sceneTarget, setSceneTarget] = useState("");
   const [sceneSavePreview, setSceneSavePreview] = useState(null);
+
+  // Autocomplete suggestions — fetched from vault initially
+  const [castSuggestions, setCastSuggestions] = useState(["Dan", "Ikazuchi", "Suigin", "Kubo"]);
+  const [locationSuggestions, setLocationSuggestions] = useState(["Iron Keep", "Kanigakure", "Training grounds", "Forest"]);
+  const [clockSuggestions, setClockSuggestions] = useState(["Shadowlands escalation", "Exam countdown", "Clan pressure", "Mystery investigation"]);
 
   async function postJson(url, payload) {
     const res = await fetch(url, {
@@ -48,24 +392,29 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
     return res.json();
   }
 
-  function splitList(value) {
-    return value.split(",").map((item) => item.trim()).filter(Boolean);
+  function handleCreateNewCast(name) {
+    setCastSuggestions([...castSuggestions, name]);
+    setScene({ ...scene, cast: [...scene.cast, name] });
+    onStatusChange(`Cast stub created: ${name}`);
+    // Future: write to DB
   }
 
-  async function pinSearch() {
-    if (!pinQuery.trim()) return;
-    await runAction("Searching vault...", async () => {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(pinQuery)}&limit=12`);
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
-      setPinResults(json);
-      onStatusChange(`Found ${json.length} result${json.length === 1 ? "" : "s"} for "${pinQuery}".`);
-    });
+  function handleCreateNewLocation(name) {
+    setLocationSuggestions([...locationSuggestions, name]);
+    setScene({ ...scene, location: [...scene.location, name] });
+    onStatusChange(`Location stub created: ${name}`);
+    // Future: write to DB
+  }
+
+  function handleCreateNewClock(name) {
+    setClockSuggestions([...clockSuggestions, name]);
+    setScene({ ...scene, clock: [...scene.clock, name] });
+    onStatusChange(`Clock stub created: ${name}`);
+    // Future: write to DB
   }
 
   function pinItem(result) {
     setPinnedMaterial([...pinnedMaterial, result]);
-    setPinResults(pinResults.filter((r) => r.path !== result.path));
   }
 
   function unpinItem(path) {
@@ -74,6 +423,10 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
 
   async function quickScene() {
     await runAction("Creating scene draft...", async () => {
+      const castStr = scene.cast.join(", ");
+      const locationStr = scene.location.join(", ");
+      const clockStr = scene.clock.join(", ");
+
       const json = await postJson("/api/capture/scene", {
         title: scene.title || "Untitled Scene",
         type: scene.type,
@@ -82,9 +435,9 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
         pc_pressure: scene.pc_pressure,
         entry_pressure: scene.entry_pressure,
         exit_condition: scene.exit_condition,
-        cast: splitList(scene.cast),
-        location: scene.location,
-        clock: scene.clock,
+        cast: castStr,
+        location: locationStr,
+        clock: clockStr,
         core_clue: scene.core_clue,
         superior_clue: scene.superior_clue,
         optional_clue: scene.optional_clue,
@@ -93,7 +446,7 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
         sensory_words: scene.sensory_words,
         interactable_objects: scene.interactable_objects,
         rules_likely: scene.rules_likely,
-        foundry_needs: splitList(scene.foundry_needs),
+        foundry_needs: scene.foundry_needs,
         replacement_route: scene.replacement_route,
         if_succeed: scene.if_succeed,
         if_fail: scene.if_fail,
@@ -128,181 +481,147 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
     });
   }
 
+  const pinnedPaths = pinnedMaterial.map((m) => m.path);
+
   return (
-    <div className="toolPanel">
-      <div className="panelHeader">
-        <div>
-          <h2>Quick Scene</h2>
-          <p>Compact card for a runnable beat: purpose, cast, clue, clock, and Foundry needs.</p>
-        </div>
-        <button onClick={quickScene}><Plus size={16} /> Create Scene Draft</button>
-      </div>
-
-      {/* Title — top-level, always visible */}
-      <div className="formGrid">
-        <label className="field spanAll">
-          <span>Title</span>
-          <input
-            value={scene.title}
-            onChange={(e) => setScene({ ...scene, title: e.target.value })}
-            placeholder="Scene name or hook"
-          />
-        </label>
-      </div>
-
-      {/* Section 1: Scene Shape */}
-      <div style={{ marginTop: "1.5rem" }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#ccc" }}>Scene Shape</h3>
-        <div className="formGrid">
-          <label className="field">
-            <span>Type</span>
-            <select value={scene.type} onChange={(e) => setScene({ ...scene, type: e.target.value })}>
-              <option value="">— Select type —</option>
-              <option value="Hard">Hard / Core</option>
-              <option value="Soft">Soft / Supplemental</option>
-              <option value="Cut">Cut</option>
-              <option value="Added">Added</option>
-              <option value="Replacement">Replacement</option>
-              <option value="Spotlight">Spotlight</option>
-              <option value="Bridge">Bridge</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Cuttable</span>
-            <input
-              type="checkbox"
-              checked={scene.cuttable}
-              onChange={(e) => setScene({ ...scene, cuttable: e.target.checked })}
-              style={{ width: 20, height: 20 }}
-            />
-          </label>
-          <label className="field spanAll">
-            <span>Purpose</span>
-            <input
-              value={scene.purpose}
-              onChange={(e) => setScene({ ...scene, purpose: e.target.value })}
-              placeholder="What does this scene accomplish?"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>PC Pressure</span>
-            <input
-              value={scene.pc_pressure}
-              onChange={(e) => setScene({ ...scene, pc_pressure: e.target.value })}
-              placeholder="Which PC lane does this pressure?"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>Entry Pressure</span>
-            <input
-              value={scene.entry_pressure}
-              onChange={(e) => setScene({ ...scene, entry_pressure: e.target.value })}
-              placeholder="What PCs see/face when the scene opens"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>Exit Condition</span>
-            <input
-              value={scene.exit_condition}
-              onChange={(e) => setScene({ ...scene, exit_condition: e.target.value })}
-              placeholder="What ends the scene?"
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* Section 2: Cast & Location */}
-      <div style={{ marginTop: "1.5rem" }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#ccc" }}>Cast & Location</h3>
-        <div className="formGrid">
-          <label className="field">
-            <span>Cast</span>
-            <input
-              value={scene.cast}
-              onChange={(e) => setScene({ ...scene, cast: e.target.value })}
-              placeholder="Dan, Ikazuchi, Suigin"
-            />
-          </label>
-          <label className="field">
-            <span>Location</span>
-            <input
-              value={scene.location}
-              onChange={(e) => setScene({ ...scene, location: e.target.value })}
-              placeholder="Where does it happen?"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>Clock/thread</span>
-            <input
-              value={scene.clock}
-              onChange={(e) => setScene({ ...scene, clock: e.target.value })}
-              placeholder="Which clock or thread advances?"
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* Section 3: Material Pins */}
-      <div style={{ marginTop: "1.5rem" }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#ccc" }}>Material Pins</h3>
-        <div className="formGrid" style={{ marginBottom: 12 }}>
-          <label className="field" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-            <span style={{ flex: 1 }}>Search vault</span>
-            <input
-              value={pinQuery}
-              onChange={(e) => setPinQuery(e.target.value)}
-              placeholder="Search for NPCs, locations, threads..."
-              onKeyDown={(e) => e.key === "Enter" && pinSearch()}
-            />
-            <button onClick={pinSearch} style={{ whiteSpace: "nowrap" }}>
-              <Search size={16} /> Search
-            </button>
-          </label>
-        </div>
-
-        {/* Pin search results */}
-        {pinResults.length > 0 && (
-          <div style={{ marginBottom: 12, borderTop: "1px solid #555", paddingTop: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#aaa", marginBottom: 8 }}>Results</div>
-            {pinResults.map((row) => (
-              <article
-                className="card"
-                key={row.path}
-                style={{
-                  marginBottom: 8,
-                  padding: 8,
-                  backgroundColor: "rgba(100,150,200,0.05)",
-                  border: "1px solid #555",
-                }}
-              >
-                <h4 style={{ margin: "0 0 4px 0" }}>{row.title}</h4>
-                <p style={{ margin: "0 0 4px 0", fontSize: 12, color: "#aaa" }}>{row.snippet}</p>
-                <code style={{ fontSize: 10, color: "#888" }}>{row.path}</code>
-                <button
-                  onClick={() => pinItem(row)}
-                  style={{
-                    marginTop: 4,
-                    padding: "4px 8px",
-                    fontSize: 12,
-                    cursor: "pointer",
-                    backgroundColor: "#4a9d83",
-                    border: "none",
-                    color: "white",
-                  }}
-                >
-                  Pin
-                </button>
-              </article>
-            ))}
+    <>
+      <div className="toolPanel">
+        <div className="panelHeader">
+          <div>
+            <h2>Quick Scene</h2>
+            <p>Compact card for a runnable beat.</p>
           </div>
-        )}
+        </div>
 
-        {/* Pinned items */}
-        {pinnedMaterial.length > 0 && (
-          <div style={{ borderTop: "1px solid #555", paddingTop: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#aaa", marginBottom: 8 }}>
-              Pinned {pinnedMaterial.length > 1 ? "items" : "item"}
-            </div>
+        {/* Title — top-level, always visible */}
+        <div className="formGrid" style={{ marginBottom: 20 }}>
+          <label className="field spanAll">
+            <span>Title</span>
+            <input
+              value={scene.title}
+              onChange={(e) => setScene({ ...scene, title: e.target.value })}
+              placeholder="Scene name or hook"
+              style={{ width: "100%", padding: "6px 8px" }}
+            />
+          </label>
+        </div>
+
+        {/* Section 1: Scene Shape */}
+        <CollapsibleSection title="Scene Shape" defaultOpen={true}>
+          <div className="formGrid">
+            <label className="field">
+              <span>Type</span>
+              <select
+                value={scene.type}
+                onChange={(e) => setScene({ ...scene, type: e.target.value })}
+                style={{ padding: "6px 8px", fontSize: 12 }}
+              >
+                <option value="">— Select —</option>
+                <option value="Hard">Hard / Core</option>
+                <option value="Soft">Soft / Supplemental</option>
+                <option value="Cut">Cut</option>
+                <option value="Added">Added</option>
+                <option value="Replacement">Replacement</option>
+                <option value="Spotlight">Spotlight</option>
+                <option value="Bridge">Bridge</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Cuttable</span>
+              <input type="checkbox" checked={scene.cuttable} onChange={(e) => setScene({ ...scene, cuttable: e.target.checked })} />
+            </label>
+            <label className="field spanAll">
+              <span>Purpose</span>
+              <input
+                value={scene.purpose}
+                onChange={(e) => setScene({ ...scene, purpose: e.target.value })}
+                placeholder="What does this accomplish?"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>PC Pressure</span>
+              <input
+                value={scene.pc_pressure}
+                onChange={(e) => setScene({ ...scene, pc_pressure: e.target.value })}
+                placeholder="Which PC lane?"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>Entry Pressure</span>
+              <input
+                value={scene.entry_pressure}
+                onChange={(e) => setScene({ ...scene, entry_pressure: e.target.value })}
+                placeholder="What PCs face at the start"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>Exit Condition</span>
+              <input
+                value={scene.exit_condition}
+                onChange={(e) => setScene({ ...scene, exit_condition: e.target.value })}
+                placeholder="What ends the scene?"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        {/* Section 2: Cast & Location */}
+        <CollapsibleSection title="Cast & Location" defaultOpen={false}>
+          <div className="formGrid">
+            <AutocompleteField
+              label="Cast"
+              value={scene.cast}
+              onChange={(val) => setScene({ ...scene, cast: val })}
+              onCreateNew={handleCreateNewCast}
+              placeholder="Search or create cast..."
+              suggestions={castSuggestions}
+            />
+            <AutocompleteField
+              label="Location"
+              value={scene.location}
+              onChange={(val) => setScene({ ...scene, location: val })}
+              onCreateNew={handleCreateNewLocation}
+              placeholder="Search or create location..."
+              suggestions={locationSuggestions}
+            />
+            <AutocompleteField
+              label="Clock/thread"
+              value={scene.clock}
+              onChange={(val) => setScene({ ...scene, clock: val })}
+              onCreateNew={handleCreateNewClock}
+              placeholder="Search or create clock..."
+              suggestions={clockSuggestions}
+            />
+          </div>
+        </CollapsibleSection>
+
+        {/* Section 3: Material Pins */}
+        <CollapsibleSection title="Material Pins" defaultOpen={false}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <button
+              onClick={() => setPinsModalOpen(true)}
+              style={{
+                padding: "8px 16px",
+                backgroundColor: "#4a9d83",
+                border: "none",
+                color: "white",
+                cursor: "pointer",
+                borderRadius: 4,
+                fontSize: 12,
+              }}
+            >
+              Edit Pins
+            </button>
+            <span style={{ fontSize: 12, color: "#aaa", alignSelf: "center" }}>
+              {pinnedMaterial.length} pinned
+            </span>
+          </div>
+
+          {pinnedMaterial.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {pinnedMaterial.map((item) => (
                 <div
@@ -315,6 +634,7 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
                     backgroundColor: "rgba(74,157,131,0.2)",
                     border: "1px solid #4a9d83",
                     fontSize: 12,
+                    borderRadius: 3,
                   }}
                 >
                   <span>{item.title}</span>
@@ -333,200 +653,241 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
                 </div>
               ))}
             </div>
+          )}
+        </CollapsibleSection>
+
+        {/* Section 4: Clue Structure */}
+        <CollapsibleSection title="Clue Structure" defaultOpen={false}>
+          <div className="formGrid">
+            <label className="field spanAll">
+              <span>Core information</span>
+              <textarea
+                value={scene.core_clue}
+                onChange={(e) => setScene({ ...scene, core_clue: e.target.value })}
+                placeholder="What must PCs learn?"
+                rows="2"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>Superior information</span>
+              <textarea
+                value={scene.superior_clue}
+                onChange={(e) => setScene({ ...scene, superior_clue: e.target.value })}
+                placeholder="Learned if they succeed/roll well"
+                rows="2"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>Optional information</span>
+              <textarea
+                value={scene.optional_clue}
+                onChange={(e) => setScene({ ...scene, optional_clue: e.target.value })}
+                placeholder="Adds color or leverage"
+                rows="2"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>False lead risk</span>
+              <textarea
+                value={scene.false_lead}
+                onChange={(e) => setScene({ ...scene, false_lead: e.target.value })}
+                placeholder="Could mislead them?"
+                rows="2"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        {/* Section 5: Sensory Prep */}
+        <CollapsibleSection title="Sensory Prep" defaultOpen={false}>
+          <div className="formGrid">
+            <label className="field spanAll">
+              <span>Opening image</span>
+              <input
+                value={scene.opening_image}
+                onChange={(e) => setScene({ ...scene, opening_image: e.target.value })}
+                placeholder="First visual impression"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>Sensory words</span>
+              <input
+                value={scene.sensory_words}
+                onChange={(e) => setScene({ ...scene, sensory_words: e.target.value })}
+                placeholder="wet stone, rust, incense ash…"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>Interactable objects</span>
+              <input
+                value={scene.interactable_objects}
+                onChange={(e) => setScene({ ...scene, interactable_objects: e.target.value })}
+                placeholder="duty board, cracked mask…"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        {/* Section 6: Contingencies */}
+        <CollapsibleSection title="Contingencies" defaultOpen={false}>
+          <div className="formGrid">
+            <label className="field">
+              <span>Rules likely</span>
+              <input
+                value={scene.rules_likely}
+                onChange={(e) => setScene({ ...scene, rules_likely: e.target.value })}
+                placeholder="stealth, grapples, chase…"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field">
+              <span>Foundry needs</span>
+              <input
+                value={scene.foundry_needs}
+                onChange={(e) => setScene({ ...scene, foundry_needs: e.target.value })}
+                placeholder="map, tokens, handout"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>Replacement route</span>
+              <input
+                value={scene.replacement_route}
+                onChange={(e) => setScene({ ...scene, replacement_route: e.target.value })}
+                placeholder="If players bypass the prep?"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>If PCs succeed</span>
+              <textarea
+                value={scene.if_succeed}
+                onChange={(e) => setScene({ ...scene, if_succeed: e.target.value })}
+                rows="1"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>If PCs fail</span>
+              <textarea
+                value={scene.if_fail}
+                onChange={(e) => setScene({ ...scene, if_fail: e.target.value })}
+                rows="1"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>If PCs ignore it</span>
+              <textarea
+                value={scene.if_ignore}
+                onChange={(e) => setScene({ ...scene, if_ignore: e.target.value })}
+                rows="1"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+            <label className="field spanAll">
+              <span>If time is short</span>
+              <textarea
+                value={scene.if_short}
+                onChange={(e) => setScene({ ...scene, if_short: e.target.value })}
+                rows="1"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        {/* Section 7: Notes */}
+        <CollapsibleSection title="Notes" defaultOpen={false}>
+          <div className="formGrid">
+            <label className="field spanAll">
+              <span>Notes</span>
+              <textarea
+                value={scene.notes}
+                onChange={(e) => setScene({ ...scene, notes: e.target.value })}
+                rows="2"
+                style={{ width: "100%", padding: "6px 8px", fontSize: 12 }}
+              />
+            </label>
+          </div>
+        </CollapsibleSection>
+
+        {/* Create Scene Draft — at the bottom */}
+        <div style={{ marginTop: 24, marginBottom: 20 }}>
+          <button
+            onClick={quickScene}
+            style={{
+              width: "100%",
+              padding: "10px 16px",
+              backgroundColor: "#4a9d83",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
+              borderRadius: 4,
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            <Plus size={16} style={{ marginRight: 8, display: "inline" }} /> Create Scene Draft
+          </button>
+        </div>
+
+        {/* Draft preview & save */}
+        {sceneDraft && (
+          <div className="draftGrid">
+            <label className="field">
+              <span>Editable Scene Draft - {sceneDraft.path}</span>
+              <textarea value={sceneText} onChange={(e) => setSceneText(e.target.value)} style={{ fontSize: 12 }} />
+            </label>
+            <label className="field">
+              <span>Preview</span>
+              <pre style={{ fontSize: 11, lineHeight: 1.3 }}>{sceneText}</pre>
+            </label>
+            <div className="saveFlow diffBox">
+              <label className="field" style={{ marginBottom: 12 }}>
+                <span>Canonical target path</span>
+                <input value={sceneTarget} onChange={(e) => setSceneTarget(e.target.value)} style={{ fontSize: 12 }} />
+              </label>
+              <div className="saveActions">
+                <button onClick={() => previewDraft(sceneDraft, sceneTarget, sceneText, setSceneSavePreview)}>
+                  <Eye size={16} /> Preview Save
+                </button>
+                <button onClick={() => saveDraft(sceneDraft, sceneTarget, sceneText, setSceneSavePreview)}>
+                  <Save size={16} /> Confirm Save
+                </button>
+              </div>
+            </div>
+            {sceneSavePreview && (
+              <label className="field diffBox">
+                <span>Canonical Diff</span>
+                <pre style={{ fontSize: 11 }}>{sceneSavePreview.diff}</pre>
+              </label>
+            )}
+          </div>
+        )}
+        {!sceneDraft && (
+          <div className="draftPlaceholder" style={{ marginTop: "1rem", textAlign: "center", color: "#888", fontSize: 12 }}>
+            Draft appears here after Create Scene Draft
           </div>
         )}
       </div>
 
-      {/* Section 4: Clue Structure */}
-      <div style={{ marginTop: "1.5rem" }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#ccc" }}>Clue Structure</h3>
-        <div className="formGrid">
-          <label className="field spanAll">
-            <span>Core information</span>
-            <textarea
-              value={scene.core_clue}
-              onChange={(e) => setScene({ ...scene, core_clue: e.target.value })}
-              placeholder="What must PCs learn or discover?"
-              rows="2"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>Superior information</span>
-            <textarea
-              value={scene.superior_clue}
-              onChange={(e) => setScene({ ...scene, superior_clue: e.target.value })}
-              placeholder="What do they learn if they succeed/roll well?"
-              rows="2"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>Optional information</span>
-            <textarea
-              value={scene.optional_clue}
-              onChange={(e) => setScene({ ...scene, optional_clue: e.target.value })}
-              placeholder="What adds color or leverage?"
-              rows="2"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>False lead risk</span>
-            <textarea
-              value={scene.false_lead}
-              onChange={(e) => setScene({ ...scene, false_lead: e.target.value })}
-              placeholder="What could mislead them?"
-              rows="2"
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* Section 5: Sensory Prep */}
-      <div style={{ marginTop: "1.5rem" }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#ccc" }}>Sensory Prep</h3>
-        <div className="formGrid">
-          <label className="field spanAll">
-            <span>Opening image</span>
-            <input
-              value={scene.opening_image}
-              onChange={(e) => setScene({ ...scene, opening_image: e.target.value })}
-              placeholder="What do PCs see first?"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>Sensory words</span>
-            <input
-              value={scene.sensory_words}
-              onChange={(e) => setScene({ ...scene, sensory_words: e.target.value })}
-              placeholder="wet stone, rust, incense ash, drilled silence, distant horns"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>Interactable objects</span>
-            <input
-              value={scene.interactable_objects}
-              onChange={(e) => setScene({ ...scene, interactable_objects: e.target.value })}
-              placeholder="duty board, cracked mask, sealed ration crate, blood-marked report"
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* Section 6: Contingencies */}
-      <div style={{ marginTop: "1.5rem" }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#ccc" }}>Contingencies</h3>
-        <div className="formGrid">
-          <label className="field">
-            <span>Rules likely</span>
-            <input
-              value={scene.rules_likely}
-              onChange={(e) => setScene({ ...scene, rules_likely: e.target.value })}
-              placeholder="stealth, grapples, chase, etc."
-            />
-          </label>
-          <label className="field">
-            <span>Foundry needs</span>
-            <input
-              value={scene.foundry_needs}
-              onChange={(e) => setScene({ ...scene, foundry_needs: e.target.value })}
-              placeholder="map, tokens, handout"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>Replacement route</span>
-            <input
-              value={scene.replacement_route}
-              onChange={(e) => setScene({ ...scene, replacement_route: e.target.value })}
-              placeholder="How do you accomplish this if players bypass the prep?"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>If PCs succeed</span>
-            <textarea
-              value={scene.if_succeed}
-              onChange={(e) => setScene({ ...scene, if_succeed: e.target.value })}
-              rows="2"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>If PCs fail</span>
-            <textarea
-              value={scene.if_fail}
-              onChange={(e) => setScene({ ...scene, if_fail: e.target.value })}
-              rows="2"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>If PCs ignore it</span>
-            <textarea
-              value={scene.if_ignore}
-              onChange={(e) => setScene({ ...scene, if_ignore: e.target.value })}
-              rows="2"
-            />
-          </label>
-          <label className="field spanAll">
-            <span>If time is short</span>
-            <textarea
-              value={scene.if_short}
-              onChange={(e) => setScene({ ...scene, if_short: e.target.value })}
-              rows="2"
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* Section 7: Notes */}
-      <div style={{ marginTop: "1.5rem" }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#ccc" }}>Notes</h3>
-        <div className="formGrid">
-          <label className="field spanAll">
-            <span>Notes</span>
-            <textarea
-              value={scene.notes}
-              onChange={(e) => setScene({ ...scene, notes: e.target.value })}
-              rows="4"
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* Draft preview & save */}
-      {sceneDraft && (
-        <div className="draftGrid">
-          <label className="field">
-            <span>Editable Scene Draft - {sceneDraft.path}</span>
-            <textarea value={sceneText} onChange={(e) => setSceneText(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Preview</span>
-            <pre>{sceneText}</pre>
-          </label>
-          <div className="saveFlow diffBox">
-            <label className="field" style={{ marginBottom: 12 }}>
-              <span>Canonical target path</span>
-              <input value={sceneTarget} onChange={(e) => setSceneTarget(e.target.value)} />
-            </label>
-            <div className="saveActions">
-              <button onClick={() => previewDraft(sceneDraft, sceneTarget, sceneText, setSceneSavePreview)}>
-                <Eye size={16} /> Preview Save
-              </button>
-              <button onClick={() => saveDraft(sceneDraft, sceneTarget, sceneText, setSceneSavePreview)}>
-                <Save size={16} /> Confirm Save
-              </button>
-            </div>
-          </div>
-          {sceneSavePreview && (
-            <label className="field diffBox">
-              <span>Canonical Diff</span>
-              <pre>{sceneSavePreview.diff}</pre>
-            </label>
-          )}
-        </div>
-      )}
-      {!sceneDraft && (
-        <div className="draftPlaceholder" style={{ marginTop: "2rem" }}>
-          Draft appears here after Create Scene Draft
-        </div>
-      )}
-    </div>
+      {/* Pins Modal */}
+      <PinsModal
+        open={pinsModalOpen}
+        onClose={() => setPinsModalOpen(false)}
+        runAction={runAction}
+        onStatusChange={onStatusChange}
+        onPin={pinItem}
+        pinnedPaths={pinnedPaths}
+      />
+    </>
   );
 }
