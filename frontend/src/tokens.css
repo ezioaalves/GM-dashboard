@@ -1,0 +1,46 @@
+/* Design Tokens - Color, spacing, typography, shape */
+
+:root {
+  /* Surfaces */
+  --color-bg:           #161817;
+  --color-surface:      #1b1f1d;
+  --color-card:         #242a27;
+  --color-elevated:     #2d3530;
+
+  /* Borders */
+  --color-border:       #37403b;
+  --color-border-strong: #4b5d53;
+
+  /* Accent */
+  --color-accent:       #5a8a6a;
+  --color-accent-dim:   #42564c;
+
+  /* Text */
+  --color-text:         #e7e8e3;
+  --color-text-secondary: #c8cec7;
+  --color-text-muted:   #8aa898;
+  --color-text-label:   #aeb9b1;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Typography */
+  --font-ui:   'Inter', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 14px;
+  --text-lg:   16px;
+  --text-xl:   18px;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.4);
+}

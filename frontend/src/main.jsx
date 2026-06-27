@@ -4,6 +4,8 @@ import { Eye, FileDiff, Link, NotebookPen, Plus, Save, Search, ShieldCheck, X } 
 import { marked } from "marked";
 import KanbanBoard from "./tickets/KanbanBoard";
 import QuickScene from "./QuickScene";
+import { AppShell } from "./components/AppShell";
+import { Sidebar } from "./components/Sidebar";
 import "./styles.css";
 
 const columns = [
@@ -157,41 +159,37 @@ function App() {
 
   const freshness = Object.entries(data.freshness);
 
+  const sessionDisplayName = data ? `Session ${data.latest_session.session}` : "—";
+
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Kaihou GM Cockpit</p>
-          <h1>Session {data.latest_session.session}: {data.latest_session.title}</h1>
-          <p className="leaveoff">{data.leave_off.detail}</p>
-        </div>
-        <div className="actions">
-          <button className={activeTool === "session-note" ? "active" : ""} onClick={() => openTool("session-note")}><NotebookPen size={16} /> Quick Session Note</button>
-          <button className={activeTool === "scene" ? "active" : ""} onClick={() => openTool("scene")}><Plus size={16} /> Quick Scene</button>
-          <button className={activeTool === "search" ? "active" : ""} onClick={() => openTool("search")}><Search size={16} /> Search Vault</button>
-          <button className={activeTool === "tickets" ? "active" : ""} onClick={() => openTool("tickets")}><FileDiff size={16} /> Tickets</button>
-          <button className={activeTool === "foundry" ? "active" : ""} onClick={() => openTool("foundry")}><Link size={16} /> Foundry Link</button>
-        </div>
-      </header>
-
-      <section className="badges">
-        {freshness.map(([key, value]) => (
-          <span className={`badge ${stateClass(value.state)}`} key={key}>
-            <ShieldCheck size={14} /> {key.replaceAll("_", " ")}: {value.state}
-          </span>
-        ))}
-      </section>
-
-      {(status || error) && (
-        <section className={`notice ${error ? "bad" : "ok"}`}>
-          <span>{error || status}</span>
-          <button aria-label="Dismiss" onClick={() => { setStatus(""); setError(""); }}><X size={14} /></button>
+    <AppShell
+      sidebar={
+        <Sidebar
+          activeTool={activeTool}
+          onToolChange={openTool}
+          sessionName={sessionDisplayName}
+        />
+      }
+    >
+      <div className="main-workbench">
+        <section className="badges">
+          {freshness.map(([key, value]) => (
+            <span className={`badge badge--${stateClass(value.state)}`} key={key}>
+              <ShieldCheck size={14} /> {key.replaceAll("_", " ")}: {value.state}
+            </span>
+          ))}
         </section>
-      )}
 
-      <section className="workbench">
-        {activeTool === "session-note" && (
-          <div className="toolPanel">
+        {(status || error) && (
+          <section className={`notice ${error ? "bad" : "ok"}`}>
+            <span>{error || status}</span>
+            <button aria-label="Dismiss" onClick={() => { setStatus(""); setError(""); }}><X size={14} /></button>
+          </section>
+        )}
+
+        <section className="workbench">
+          {activeTool === "session-note" && (
+            <div className="toolPanel">
             <div className="panelHeader">
               <div>
                 <h2>Quick Session Note</h2>
@@ -415,41 +413,27 @@ function App() {
             {foundry && <pre className="resultBlock">{JSON.stringify(foundry, null, 2)}</pre>}
           </div>
         )}
-      </section>
+        </section>
 
-      <section className="board">
-        {columns.map(([key, label]) => (
-          <div className="lane" key={key}>
-            <h2>{label}</h2>
-            {(data.columns[key] || []).map((card) => (
-              <article className="card" key={card.id}>
-                <h3>{card.title}</h3>
-                <p>{card.detail || card.purpose || card.next_action || card.resume_note || card.body_excerpt}</p>
-                {card.path && <code>{card.path}</code>}
-              </article>
-            ))}
+        {openFile && (
+          <div className="modalBackdrop">
+            <section className="markdownModal">
+              <header className="modalHeader">
+                <div>
+                  <h2>Markdown Editor</h2>
+                  <p>Read-only context. Canonical writes go through draft preview and confirm flows.</p>
+                  <code>{openFile.path}</code>
+                </div>
+                <div className="modalActions">
+                  <button onClick={() => setOpenFile(null)}><X size={16} /> Close</button>
+                </div>
+              </header>
+              <pre>{openFile.markdown}</pre>
+            </section>
           </div>
-        ))}
-      </section>
-
-      {openFile && (
-        <div className="modalBackdrop">
-          <section className="markdownModal">
-            <header className="modalHeader">
-              <div>
-                <h2>Markdown Editor</h2>
-                <p>Read-only context. Canonical writes go through draft preview and confirm flows.</p>
-                <code>{openFile.path}</code>
-              </div>
-              <div className="modalActions">
-                <button onClick={() => setOpenFile(null)}><X size={16} /> Close</button>
-              </div>
-            </header>
-            <pre>{openFile.markdown}</pre>
-          </section>
-        </div>
-      )}
-    </main>
+        )}
+      </div>
+    </AppShell>
   );
 }
 

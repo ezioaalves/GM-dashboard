@@ -51,9 +51,9 @@ function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPath
       zIndex: 1000,
     }}>
       <div style={{
-        backgroundColor: "#1a1a1a",
+        backgroundColor: "var(--color-surface)",
         borderRadius: 8,
-        border: "1px solid #555",
+        border: "1px solid var(--color-border-strong)",
         width: "90%",
         maxWidth: 1200,
         height: "80vh",
@@ -77,13 +77,13 @@ function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPath
             style={{
               flex: 1,
               padding: "8px 12px",
-              backgroundColor: "#2a2a2a",
-              border: "1px solid #555",
-              color: "#ccc",
+              backgroundColor: "var(--color-card)",
+              border: "1px solid var(--color-border-strong)",
+              color: "var(--color-text-secondary)",
               borderRadius: 4,
             }}
           />
-          <button onClick={pinSearch} style={{ padding: "8px 16px", backgroundColor: "#4a9d83", border: "none", color: "white", cursor: "pointer", borderRadius: 4 }}>
+          <button onClick={pinSearch} style={{ padding: "8px 16px", backgroundColor: "var(--color-accent)", border: "none", color: "white", cursor: "pointer", borderRadius: 4 }}>
             <Search size={16} /> Search
           </button>
         </div>
@@ -97,9 +97,9 @@ function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPath
             paddingRight: 12,
           }}>
             {results.length === 0 && query ? (
-              <p style={{ color: "#888", fontSize: 12 }}>No results found.</p>
+              <p style={{ color: "var(--color-text-muted)", fontSize: 12 }}>No results found.</p>
             ) : results.length === 0 ? (
-              <p style={{ color: "#888", fontSize: 12 }}>Type to search...</p>
+              <p style={{ color: "var(--color-text-muted)", fontSize: 12 }}>Type to search...</p>
             ) : (
               results.map((row) => {
                 const isPinned = pinnedPaths.includes(row.path);
@@ -110,15 +110,15 @@ function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPath
                       padding: 10,
                       marginBottom: 8,
                       backgroundColor: selectedPath === row.path ? "rgba(74,157,131,0.3)" : "rgba(100,100,100,0.1)",
-                      border: `1px solid ${selectedPath === row.path ? "#4a9d83" : "#555"}`,
+                      border: `1px solid ${selectedPath === row.path ? "var(--color-accent)" : "#555"}`,
                       borderRadius: 4,
                       cursor: "pointer",
                     }}
                   >
                     <div onClick={() => viewContent(row.path)} style={{ marginBottom: 8 }}>
                       <h4 style={{ margin: "0 0 4px 0", fontSize: 13 }}>{row.title}</h4>
-                      <p style={{ margin: "0 0 4px 0", fontSize: 11, color: "#aaa", lineHeight: 1.3 }}>{row.snippet}</p>
-                      <code style={{ fontSize: 9, color: "#888" }}>{row.path}</code>
+                      <p style={{ margin: "0 0 4px 0", fontSize: 11, color: "var(--color-text-muted)", lineHeight: 1.3 }}>{row.snippet}</p>
+                      <code style={{ fontSize: 9, color: "var(--color-text-muted)" }}>{row.path}</code>
                     </div>
                     <button
                       onClick={() => handlePin(row)}
@@ -127,7 +127,7 @@ function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPath
                         width: "100%",
                         padding: "6px 8px",
                         fontSize: 12,
-                        backgroundColor: isPinned ? "#666" : "#4a9d83",
+                        backgroundColor: isPinned ? "#666" : "var(--color-accent)",
                         border: "none",
                         color: "white",
                         cursor: isPinned ? "default" : "pointer",
@@ -153,7 +153,7 @@ function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPath
                 <h4 style={{ margin: "0 0 12px 0", wordBreak: "break-word" }}>{selectedPath}</h4>
                 <pre style={{
                   backgroundColor: "#2a2a2a",
-                  border: "1px solid #555",
+                  border: "1px solid var(--color-border-strong)",
                   borderRadius: 4,
                   padding: 12,
                   fontSize: 12,
@@ -167,7 +167,7 @@ function PinsModal({ open, onClose, runAction, onStatusChange, onPin, pinnedPath
                 </pre>
               </div>
             ) : (
-              <p style={{ color: "#888", fontSize: 12 }}>Select a result to preview</p>
+              <p style={{ color: "var(--color-text-muted)", fontSize: 12 }}>Select a result to preview</p>
             )}
           </div>
         </div>
@@ -200,7 +200,7 @@ function AutocompleteField({ label, value, onChange, onCreateNew, placeholder, s
   return (
     <div style={{ position: "relative" }}>
       <label style={{ display: "block", marginBottom: 4 }}>
-        <span style={{ fontSize: 12, color: "#aaa" }}>{label}</span>
+        <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{label}</span>
       </label>
 
       {/* Display selected items as tags */}
@@ -215,7 +215,7 @@ function AutocompleteField({ label, value, onChange, onCreateNew, placeholder, s
                 gap: 4,
                 padding: "4px 8px",
                 backgroundColor: "rgba(74,157,131,0.2)",
-                border: "1px solid #4a9d83",
+                border: "1px solid var(--color-accent)",
                 fontSize: 12,
                 borderRadius: 3,
               }}
@@ -227,7 +227,7 @@ function AutocompleteField({ label, value, onChange, onCreateNew, placeholder, s
                   background: "none",
                   border: "none",
                   cursor: "pointer",
-                  color: "#aaa",
+                  color: "var(--color-text-muted)",
                   padding: 0,
                 }}
               >
@@ -253,7 +253,7 @@ function AutocompleteField({ label, value, onChange, onCreateNew, placeholder, s
             width: "100%",
             padding: "6px 8px",
             backgroundColor: "#2a2a2a",
-            border: "1px solid #555",
+            border: "1px solid var(--color-border-strong)",
             color: "#ccc",
             borderRadius: 4,
             fontSize: 12,
@@ -268,7 +268,7 @@ function AutocompleteField({ label, value, onChange, onCreateNew, placeholder, s
             left: 0,
             right: 0,
             backgroundColor: "#2a2a2a",
-            border: "1px solid #555",
+            border: "1px solid var(--color-border-strong)",
             borderTop: "none",
             borderRadius: "0 0 4px 4px",
             maxHeight: 200,
@@ -282,7 +282,7 @@ function AutocompleteField({ label, value, onChange, onCreateNew, placeholder, s
                 style={{
                   padding: "8px 12px",
                   cursor: "pointer",
-                  borderBottom: "1px solid #444",
+                  borderBottom: "1px solid var(--color-border)",
                   fontSize: 12,
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(74,157,131,0.2)")}
@@ -298,7 +298,7 @@ function AutocompleteField({ label, value, onChange, onCreateNew, placeholder, s
                   padding: "8px 12px",
                   cursor: "pointer",
                   backgroundColor: "rgba(74,157,131,0.1)",
-                  color: "#4a9d83",
+                  color: "var(--color-accent)",
                   fontSize: 12,
                   fontWeight: 600,
                   borderTop: "1px solid #555",
@@ -329,7 +329,7 @@ function CollapsibleSection({ title, children, defaultOpen = false }) {
           alignItems: "center",
           gap: 8,
           userSelect: "none",
-          borderBottom: "1px solid #444",
+          borderBottom: "1px solid var(--color-border)",
           marginBottom: open ? 16 : 0,
         }}
       >
@@ -606,7 +606,7 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
               onClick={() => setPinsModalOpen(true)}
               style={{
                 padding: "8px 16px",
-                backgroundColor: "#4a9d83",
+                backgroundColor: "var(--color-accent)",
                 border: "none",
                 color: "white",
                 cursor: "pointer",
@@ -616,7 +616,7 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
             >
               Edit Pins
             </button>
-            <span style={{ fontSize: 12, color: "#aaa", alignSelf: "center" }}>
+            <span style={{ fontSize: 12, color: "var(--color-text-muted)", alignSelf: "center" }}>
               {pinnedMaterial.length} pinned
             </span>
           </div>
@@ -632,7 +632,7 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
                     gap: 6,
                     padding: "6px 10px",
                     backgroundColor: "rgba(74,157,131,0.2)",
-                    border: "1px solid #4a9d83",
+                    border: "1px solid var(--color-accent)",
                     fontSize: 12,
                     borderRadius: 3,
                   }}
@@ -645,7 +645,7 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
                       border: "none",
                       cursor: "pointer",
                       padding: 0,
-                      color: "#aaa",
+                      color: "var(--color-text-muted)",
                     }}
                   >
                     <X size={14} />
@@ -826,7 +826,7 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
             style={{
               width: "100%",
               padding: "10px 16px",
-              backgroundColor: "#4a9d83",
+              backgroundColor: "var(--color-accent)",
               border: "none",
               color: "white",
               cursor: "pointer",
@@ -873,7 +873,7 @@ export default function QuickScene({ onStatusChange, onErrorChange, runAction })
           </div>
         )}
         {!sceneDraft && (
-          <div className="draftPlaceholder" style={{ marginTop: "1rem", textAlign: "center", color: "#888", fontSize: 12 }}>
+          <div className="draftPlaceholder" style={{ marginTop: "1rem", textAlign: "center", color: "var(--color-text-muted)", fontSize: 12 }}>
             Draft appears here after Create Scene Draft
           </div>
         )}
