@@ -437,3 +437,120 @@ code {
     display: grid;
   }
 }
+
+.sessionThreeCol {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(200px, 0.6fr) minmax(340px, 1.2fr) minmax(340px, 1.2fr);
+  margin-top: 14px;
+}
+
+.contextPanel {
+  background: #141816;
+  border: 1px solid #2d3530;
+  border-radius: 8px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.contextSection {
+  border-top: 1px solid #2a302c;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.contextSection:first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.contextLabel {
+  color: #8aa898;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.contextText {
+  color: #c8cec7;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 6px 0 0;
+}
+
+.draftTabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.draftTabs button {
+  font-size: 12px;
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.markdownPreview {
+  background: #111312;
+  border: 1px solid #333a36;
+  border-radius: 8px;
+  color: #e7e8e3;
+  font: 14px/1.6 Inter, ui-sans-serif, system-ui, sans-serif;
+  height: min(62vh, 680px);
+  min-height: 400px;
+  overflow: auto;
+  padding: 14px 18px;
+}
+
+.markdownPreview h1,
+.markdownPreview h2,
+.markdownPreview h3 {
+  color: #f2f4ef;
+  margin-top: 1.2em;
+}
+
+.markdownPreview code {
+  background: #1d2521;
+  border-radius: 4px;
+  color: #9fc6b3;
+  display: inline;
+  font-size: 0.9em;
+  padding: 1px 4px;
+}
+
+.markdownPreview pre {
+  background: #1d2521;
+  border: 1px solid #2d3530;
+  border-radius: 6px;
+  min-height: unset;
+  padding: 12px;
+}
+
+.draftPlaceholder {
+  align-items: center;
+  border: 1px dashed #2d3530;
+  border-radius: 8px;
+  color: #6b7a70;
+  display: flex;
+  font-size: 13px;
+  justify-content: center;
+  min-height: 400px;
+}
+
+@media (max-width: 1200px) {
+  .sessionThreeCol {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sessionThreeCol > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .sessionThreeCol {
+    grid-template-columns: 1fr;
+  }
+}

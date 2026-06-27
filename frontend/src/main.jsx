@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Eye, FileDiff, Link, NotebookPen, Plus, Save, Search, ShieldCheck, X } from "lucide-react";
+import { marked } from "marked";
 import "./styles.css";
 
 const columns = [
@@ -20,7 +21,6 @@ function App() {
   const [activeTool, setActiveTool] = useState("session-note");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const [memory, setMemory] = useState("");
   const [sessionDraft, setSessionDraft] = useState(null);
   const [draftText, setDraftText] = useState("");
   const [sessionTarget, setSessionTarget] = useState("");
@@ -35,6 +35,19 @@ function App() {
   const [tickets, setTickets] = useState([]);
   const [foundry, setFoundry] = useState(null);
   const [openFile, setOpenFile] = useState(null);
+  const [contextLoaded, setContextLoaded] = useState(false);
+  const [contextData, setContextData] = useState(null);
+  const [contextError, setContextError] = useState("");
+  const [form, setForm] = useState({
+    scenes: "",
+    npcs_present: "",
+    clues_discovered: "",
+    threads_touched: "",
+    unresolved_questions: "",
+    next_session_hook: "",
+    memory: "",
+  });
+  const [draftTab, setDraftTab] = useState("edit");
 
   useEffect(() => {
     fetch("/api/cockpit/session")
@@ -43,13 +56,36 @@ function App() {
       .catch((err) => setError(`Could not load cockpit: ${err.message}`));
   }, []);
 
+  useEffect(() => {
+    if (activeTool !== "session-note" || contextLoaded) return;
+    setContextLoaded(true);
+    fetch("/api/capture/session-note/context")
+      .then((r) => r.json())
+      .then((json) => {
+        setContextData(json);
+        if (json.npc_list && json.npc_list.length > 0) {
+          setForm((f) => ({ ...f, npcs_present: json.npc_list.join(", ") }));
+        }
+      })
+      .catch((err) => setContextError(`Could not load context: ${err.message}`));
+  }, [activeTool, contextLoaded]);
+
   async function quickNote() {
     await runAction("Generating session draft...", async () => {
-      const json = await postJson("/api/capture/session-note", { memory });
+      const json = await postJson("/api/capture/session-note", {
+        memory: form.memory,
+        scenes: splitLines(form.scenes),
+        npcs_present: splitList(form.npcs_present),
+        clues_discovered: splitLines(form.clues_discovered),
+        threads_touched: splitLines(form.threads_touched),
+        unresolved_questions: splitLines(form.unresolved_questions),
+        next_session_hook: form.next_session_hook,
+      });
       setSessionDraft(json);
       setDraftText(json.markdown);
       setSessionTarget(json.default_target_path);
       setSessionSavePreview(null);
+      setDraftTab("edit");
       setStatus(`Session draft written to ${json.path}`);
     });
   }
@@ -192,47 +228,165 @@ function App() {
             <div className="panelHeader">
               <div>
                 <h2>Quick Session Note</h2>
-                <p>Memory plus the latest session context becomes an editable Markdown draft.</p>
+                <p>Fill in what you remember → generate draft → review → save canonical Markdown.</p>
               </div>
               <button onClick={quickNote}><NotebookPen size={16} /> Generate Draft</button>
             </div>
-            <div className="sessionGrid">
-              <label className="field sourceBox">
-                <span>Source</span>
-                <pre>Latest: Session {data.latest_session.session} - {data.latest_session.title}
+            <div className="sessionThreeCol">
+              {/* Left: source context panel */}
+              <div className="contextPanel">
+                {contextError && <p style={{ color: "#f0d9db", fontSize: 12, margin: 0 }}>{contextError}</p>}
+                {!contextData && !contextError && <p className="contextText">Loading context…</p>}
+                {contextData && (
+                  <>
+                    <div className="contextSection">
+                      <div className="contextLabel">Latest session</div>
+                      {contextData.latest_session ? (
+                        <p className="contextText">
+                          Session {contextData.latest_session.session}: {contextData.latest_session.title}
+                          {contextData.latest_session.date ? ` (${contextData.latest_session.date})` : ""}
+                        </p>
+                      ) : (
+                        <p className="contextText">No session logs found.</p>
+                      )}
+                    </div>
+                    {contextData.npc_list.length > 0 && (
+                      <div className="contextSection">
+                        <div className="contextLabel">Last session NPCs</div>
+                        <p className="contextText">{contextData.npc_list.join(", ")}</p>
+                      </div>
+                    )}
+                    {contextData.live_prep_excerpt && (
+                      <div className="contextSection">
+                        <div className="contextLabel">Live prep</div>
+                        <p className="contextText">
+                          {contextData.live_prep_excerpt.slice(0, 400)}
+                          {contextData.live_prep_excerpt.length > 400 ? "…" : ""}
+                        </p>
+                      </div>
+                    )}
+                    {contextData.active_threads.length > 0 && (
+                      <div className="contextSection">
+                        <div className="contextLabel">Active threads ({contextData.active_threads.length})</div>
+                        {contextData.active_threads.map((t) => (
+                          <div key={t.id} style={{ marginTop: 10 }}>
+                            <div style={{ color: "#dce8de", fontSize: 12, fontWeight: 600 }}>{t.title}</div>
+                            {t.next_move && <div className="contextText">{t.next_move}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
 
-Leave-off: {data.leave_off.detail}
-
-Path: {data.latest_session.path}</pre>
-              </label>
-              <label className="field memoryBox">
-                <span>GM Memory</span>
-                <textarea value={memory} onChange={(e) => setMemory(e.target.value)} placeholder="Drop rough memory here. Bullet fragments are fine." />
-              </label>
-            </div>
-            {sessionDraft && (
-              <div className="draftGrid wide">
+              {/* Middle: recovery form */}
+              <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
                 <label className="field">
-                  <span>Editable Markdown Draft - {sessionDraft.path}</span>
-                  <textarea value={draftText} onChange={(e) => setDraftText(e.target.value)} />
+                  <span>Scenes (one per line, in order)</span>
+                  <textarea
+                    value={form.scenes}
+                    onChange={(e) => setForm({ ...form, scenes: e.target.value })}
+                    placeholder={"Party escapes the forest\nDan spots the patrol beacon"}
+                    style={{ minHeight: 110 }}
+                  />
+                </label>
+                <Input
+                  label="NPCs present (comma-separated)"
+                  value={form.npcs_present}
+                  onChange={(v) => setForm({ ...form, npcs_present: v })}
+                  placeholder="Dan, Ikazuchi, Suigin"
+                />
+                <label className="field">
+                  <span>Clues discovered (one per line)</span>
+                  <textarea
+                    value={form.clues_discovered}
+                    onChange={(e) => setForm({ ...form, clues_discovered: e.target.value })}
+                    style={{ minHeight: 80 }}
+                  />
                 </label>
                 <label className="field">
-                  <span>Preview</span>
-                  <pre>{draftText}</pre>
+                  <span>Threads touched (one per line)</span>
+                  <textarea
+                    value={form.threads_touched}
+                    onChange={(e) => setForm({ ...form, threads_touched: e.target.value })}
+                    style={{ minHeight: 80 }}
+                  />
                 </label>
-                <div className="saveFlow diffBox">
-                  <Input label="Canonical target path" value={sessionTarget} onChange={setSessionTarget} />
-                  <div className="saveActions">
-                    <button onClick={() => previewDraft(sessionDraft, sessionTarget, draftText, setSessionSavePreview)}><Eye size={16} /> Preview Save</button>
-                    <button onClick={() => saveDraft(sessionDraft, sessionTarget, draftText, setSessionSavePreview)}><Save size={16} /> Confirm Save</button>
-                  </div>
-                </div>
-                <label className="field diffBox">
-                  <span>{sessionSavePreview ? "Canonical Diff" : "Initial Draft Diff"}</span>
-                  <pre>{(sessionSavePreview && sessionSavePreview.diff) || sessionDraft.diff}</pre>
+                <label className="field">
+                  <span>Unresolved questions (one per line)</span>
+                  <textarea
+                    value={form.unresolved_questions}
+                    onChange={(e) => setForm({ ...form, unresolved_questions: e.target.value })}
+                    style={{ minHeight: 80 }}
+                  />
+                </label>
+                <Input
+                  label="Hook for next session"
+                  value={form.next_session_hook}
+                  onChange={(v) => setForm({ ...form, next_session_hook: v })}
+                  placeholder="Party emerges from the forest at dawn"
+                />
+                <label className="field">
+                  <span>GM memory / notes</span>
+                  <textarea
+                    value={form.memory}
+                    onChange={(e) => setForm({ ...form, memory: e.target.value })}
+                    placeholder="Rough fragments fine — becomes the Continuity notes section."
+                    style={{ minHeight: 100 }}
+                  />
                 </label>
               </div>
-            )}
+
+              {/* Right: draft tabs */}
+              {sessionDraft ? (
+                <div style={{ display: "grid", gap: 10, gridTemplateRows: "1fr auto", alignContent: "start" }}>
+                  <div>
+                    <div className="draftTabs">
+                      <button className={draftTab === "edit" ? "active" : ""} onClick={() => setDraftTab("edit")}>Edit</button>
+                      <button className={draftTab === "preview" ? "active" : ""} onClick={() => setDraftTab("preview")}>Preview</button>
+                      <button className={draftTab === "diff" ? "active" : ""} onClick={() => setDraftTab("diff")}>Diff</button>
+                    </div>
+                    {draftTab === "edit" && (
+                      <label className="field">
+                        <span>Draft — {sessionDraft.path}</span>
+                        <textarea
+                          value={draftText}
+                          onChange={(e) => setDraftText(e.target.value)}
+                          style={{ height: "min(62vh, 680px)", minHeight: 400 }}
+                        />
+                      </label>
+                    )}
+                    {draftTab === "preview" && (
+                      <div>
+                        <div className="contextLabel" style={{ marginBottom: 8 }}>Rendered preview</div>
+                        <div
+                          className="markdownPreview"
+                          dangerouslySetInnerHTML={{ __html: marked.parse(draftText) }}
+                        />
+                      </div>
+                    )}
+                    {draftTab === "diff" && (
+                      <label className="field">
+                        <span>{sessionSavePreview ? "Canonical diff" : "Initial draft diff"}</span>
+                        <pre style={{ height: "min(62vh, 680px)", minHeight: 400 }}>
+                          {(sessionSavePreview && sessionSavePreview.diff) || sessionDraft.diff}
+                        </pre>
+                      </label>
+                    )}
+                  </div>
+                  <div className="saveFlow">
+                    <Input label="Canonical target path" value={sessionTarget} onChange={setSessionTarget} />
+                    <div className="saveActions">
+                      <button onClick={() => previewDraft(sessionDraft, sessionTarget, draftText, setSessionSavePreview)}><Eye size={16} /> Preview Save</button>
+                      <button onClick={() => saveDraft(sessionDraft, sessionTarget, draftText, setSessionSavePreview)}><Save size={16} /> Confirm Save</button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="draftPlaceholder">Draft appears here after Generate</div>
+              )}
+            </div>
           </div>
         )}
 
@@ -399,6 +553,10 @@ async function postJson(url, payload) {
 
 function splitList(value) {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function splitLines(value) {
+  return value.split("\n").map((l) => l.trim()).filter(Boolean);
 }
 
 function Input({ label, value, onChange, placeholder = "" }) {
