@@ -42,11 +42,13 @@ export default function SceneDeck({ onStatusChange, onErrorChange, runAction }) 
       if (!res.ok) throw new Error(await res.text());
     } catch (e) {
       setError(e.message);
+      onErrorChange(e.message);
       load();
     }
   }
 
   async function handleSave(data) {
+    setError("");
     try {
       const isEdit = !!data.id;
       const url = isEdit ? `/api/scenes/${data.id}` : "/api/scenes";
@@ -67,6 +69,7 @@ export default function SceneDeck({ onStatusChange, onErrorChange, runAction }) 
 
   async function handleDelete(id) {
     if (!confirm("Delete this scene?")) return;
+    setError("");
     try {
       const res = await fetch(`/api/scenes/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(await res.text());

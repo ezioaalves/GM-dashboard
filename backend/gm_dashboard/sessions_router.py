@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import psycopg2.errors
 import psycopg2.extras
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -39,7 +40,7 @@ def create_session(payload: SessionCreate) -> dict:
                     "INSERT INTO sessions (number, name) VALUES (%s, %s) RETURNING id, number, name",
                     (payload.number, payload.name),
                 )
-            except Exception:
+            except psycopg2.errors.UniqueViolation:
                 raise HTTPException(status_code=409, detail=f"Session {payload.number} already exists")
             return _row_to_dict(cur.fetchone())
     finally:

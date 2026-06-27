@@ -1,3 +1,6 @@
+# ONE-SHOT MIGRATION — DO NOT RE-RUN WITH PRODUCTION DATA
+# The scenes table is dropped and recreated. Re-running this script
+# will destroy all scene records. Apply it once on a fresh DB only.
 from __future__ import annotations
 import os
 import psycopg2
@@ -15,6 +18,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Drops scenes unconditionally — safe on first run, destructive on re-run.
+-- See file header warning above before executing.
 DROP TABLE IF EXISTS scenes;
 
 CREATE TABLE scenes (
