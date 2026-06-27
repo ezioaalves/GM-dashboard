@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Eye, FileDiff, Link, NotebookPen, Plus, Save, Search, ShieldCheck, X } from "lucide-react";
 import { marked } from "marked";
+import KanbanBoard from "./tickets/KanbanBoard";
 import "./styles.css";
 
 const columns = [
@@ -32,7 +33,6 @@ function App() {
   const [sceneSavePreview, setSceneSavePreview] = useState(null);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-  const [tickets, setTickets] = useState([]);
   const [foundry, setFoundry] = useState(null);
   const [openFile, setOpenFile] = useState(null);
   const [contextLoaded, setContextLoaded] = useState(false);
@@ -119,16 +119,6 @@ function App() {
     });
   }
 
-  async function loadTickets() {
-    await runAction("Loading tickets...", async () => {
-      const res = await fetch("/api/tickets");
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
-      setTickets(json);
-      setStatus(`Loaded ${json.length} operational tickets.`);
-    });
-  }
-
   async function loadFoundry() {
     await runAction("Checking Foundry status...", async () => {
       const res = await fetch("/api/foundry/status");
@@ -182,7 +172,6 @@ function App() {
     setActiveTool(tool);
     setError("");
     setStatus("");
-    if (tool === "tickets" && tickets.length === 0) loadTickets();
     if (tool === "foundry" && !foundry) loadFoundry();
   }
 
@@ -470,20 +459,10 @@ function App() {
             <div className="panelHeader">
               <div>
                 <h2>Operational Tickets</h2>
-                <p>Current ticket view from Markdown frontmatter. New-ticket creation is still a next-step ticket.</p>
+                <p>Drag cards between lanes to update stage. Click a card to edit.</p>
               </div>
-              <button onClick={loadTickets}><FileDiff size={16} /> Refresh Tickets</button>
             </div>
-            <div className="results">
-              {tickets.map((ticket) => (
-                <article className="card" key={ticket.id}>
-                  <h3>{ticket.title}</h3>
-                  <p>{ticket.next_action || ticket.resume_note || ticket.body_excerpt || "No next action set."}</p>
-                  <code>{ticket.stage} / {ticket.status} / {ticket.path}</code>
-                  <button className="cardAction" onClick={() => openMarkdown(ticket.path)}>Open Ticket</button>
-                </article>
-              ))}
-            </div>
+            <KanbanBoard />
           </div>
         )}
 
