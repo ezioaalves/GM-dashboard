@@ -9,12 +9,14 @@ from . import services
 from .tickets_router import router as tickets_router
 from .scenes_router import router as scenes_router
 from .sessions_router import router as sessions_router
+from .sync_router import router as sync_router
 
 
 app = FastAPI(title="Kaihou GM Dashboard", version="0.1.0")
 app.include_router(tickets_router, prefix="/api")
 app.include_router(scenes_router, prefix="/api")
 app.include_router(sessions_router, prefix="/api")
+app.include_router(sync_router, prefix="/api")
 
 
 class SessionNoteRequest(BaseModel):

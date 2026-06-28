@@ -70,8 +70,17 @@ class SyncJob(Base):
     direction = Column(Text, nullable=False)
     status = Column(Text, nullable=False, server_default="pending")
     diff = Column(Text, nullable=False, server_default="")
+    job_type = Column(Text, nullable=False, server_default="legacy")
+    source_surface = Column(Text, nullable=False, server_default="manual")
+    target_surface = Column(Text, nullable=False, server_default="manual")
+    payload = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    result = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    error = Column(Text, nullable=False, server_default="")
     approved_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    started_at = Column(DateTime(timezone=True))
+    finished_at = Column(DateTime(timezone=True))
     approved_at = Column(DateTime(timezone=True))
 
 
@@ -103,9 +112,39 @@ class Ticket(Base):
     closed = Column(Date)
     resolution = Column(Text, server_default="")
     review_after = Column(Date)
+    lane = Column(Text, server_default="next")
+    classification = Column(Text, server_default="")
+    target_epic = Column(Text, server_default="")
+    source_path = Column(Text, server_default="")
+    source_hash = Column(Text, server_default="")
+    source_mtime = Column(DateTime(timezone=True))
+    review_status = Column(Text, server_default="accepted")
     body = Column(Text, server_default="")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class SyncReview(Base):
+    __tablename__ = "sync_reviews"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    review_type = Column(Text, nullable=False)
+    source_surface = Column(Text, nullable=False)
+    target_surface = Column(Text, nullable=False)
+    target_type = Column(Text, nullable=False)
+    target_id = Column(Text, nullable=False, server_default="")
+    base_version = Column(Text, nullable=False, server_default="")
+    current_version = Column(Text, nullable=False, server_default="")
+    proposed_changes = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    conflict_flags = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    review_status = Column(Text, nullable=False, server_default="pending")
+    decision = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    sync_job_id = Column(PGUUID(as_uuid=True), ForeignKey("sync_jobs.id", ondelete="SET NULL"))
+    created_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id"))
+    updated_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    decided_at = Column(DateTime(timezone=True))
+    applied_at = Column(DateTime(timezone=True))
 
 
 class Session(Base):

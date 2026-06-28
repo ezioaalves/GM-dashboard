@@ -43,8 +43,17 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
   direction text NOT NULL,
   status text NOT NULL DEFAULT 'pending',
   diff text NOT NULL DEFAULT '',
+  job_type text NOT NULL DEFAULT 'legacy',
+  source_surface text NOT NULL DEFAULT 'manual',
+  target_surface text NOT NULL DEFAULT 'manual',
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  result jsonb NOT NULL DEFAULT '{}'::jsonb,
+  error text NOT NULL DEFAULT '',
   approved_by uuid REFERENCES users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  started_at timestamptz,
+  finished_at timestamptz,
   approved_at timestamptz
 );
 
@@ -74,10 +83,44 @@ CREATE TABLE IF NOT EXISTS tickets (
   closed       DATE,
   resolution   TEXT DEFAULT '',
   review_after DATE,
+  lane         TEXT DEFAULT 'next',
+  classification TEXT DEFAULT '',
+  target_epic  TEXT DEFAULT '',
+  source_path  TEXT DEFAULT '',
+  source_hash  TEXT DEFAULT '',
+  source_mtime TIMESTAMPTZ,
+  review_status TEXT DEFAULT 'accepted',
   body         TEXT DEFAULT '',
   created_at   TIMESTAMPTZ DEFAULT now(),
   updated_at   TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS sync_reviews (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  review_type text NOT NULL,
+  source_surface text NOT NULL,
+  target_surface text NOT NULL,
+  target_type text NOT NULL,
+  target_id text NOT NULL DEFAULT '',
+  base_version text NOT NULL DEFAULT '',
+  current_version text NOT NULL DEFAULT '',
+  proposed_changes jsonb NOT NULL DEFAULT '{}'::jsonb,
+  conflict_flags jsonb NOT NULL DEFAULT '[]'::jsonb,
+  review_status text NOT NULL DEFAULT 'pending'
+    CHECK (review_status IN ('pending', 'accepted', 'rejected', 'merged', 'deferred', 'conflict', 'stale')),
+  decision jsonb NOT NULL DEFAULT '{}'::jsonb,
+  sync_job_id uuid REFERENCES sync_jobs(id) ON DELETE SET NULL,
+  created_by uuid REFERENCES users(id),
+  updated_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  decided_at timestamptz,
+  applied_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_sync_reviews_status_created
+  ON sync_reviews(review_status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sync_reviews_target
+  ON sync_reviews(target_type, target_id);
 
 CREATE TABLE IF NOT EXISTS sessions (
   id          SERIAL PRIMARY KEY,

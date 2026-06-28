@@ -7,6 +7,7 @@ import psycopg2.extras
 from fastapi.testclient import TestClient
 
 from gm_dashboard.api import app
+from gm_dashboard import tickets_router
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -22,12 +23,16 @@ def clean_tickets():
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = True
     with conn.cursor() as cur:
+        cur.execute("DELETE FROM sync_reviews")
+        cur.execute("DELETE FROM sync_jobs")
         cur.execute("DELETE FROM tickets")
     conn.close()
     yield
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = True
     with conn.cursor() as cur:
+        cur.execute("DELETE FROM sync_reviews")
+        cur.execute("DELETE FROM sync_jobs")
         cur.execute("DELETE FROM tickets")
     conn.close()
 
@@ -197,3 +202,89 @@ def test_update_ticket_invalid_area():
         "priority": "med", "stage": "next",
     })
     assert res.status_code == 422
+
+
+def write_ticket_source(root, ticket_id: str = "system-core-data-spine"):
+    tickets_dir = root / "Campaign Management" / "operational" / "tickets"
+    tickets_dir.mkdir(parents=True)
+    path = tickets_dir / f"{ticket_id}.md"
+    path.write_text(
+        """---
+id: system-core-data-spine
+title: "Implement Core Entity Spine And Review Models"
+status: open
+area: housekeeping
+priority: high
+stage: next
+introduced: 2026-06-28
+depends_on:
+  - system-definition-backlog-map
+---
+
+Import this ticket through review.
+""",
+        encoding="utf-8",
+    )
+    mapping_dir = root / "docs" / "superpowers" / "system-definition"
+    mapping_dir.mkdir(parents=True)
+    (mapping_dir / "12-backlog-mapping.md").write_text(
+        """# Backlog Mapping
+
+## Operational Tickets
+
+| Ticket | Classification | Target epic | Notes |
+| --- | --- | --- | --- |
+| `system-core-data-spine` | current | Epic 3 | Must use sync_reviews. |
+
+## Dashboard Plans And Specs
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_stage_ticket_import_review_preserves_markdown(tmp_path, monkeypatch):
+    source = write_ticket_source(tmp_path)
+    monkeypatch.setattr(tickets_router, "_vault_root", lambda: tmp_path)
+
+    res = client.post("/api/tickets/import/review")
+
+    assert res.status_code == 201
+    data = res.json()
+    assert data["found"] == 1
+    assert len(data["created"]) == 1
+    assert data["source_files_deleted"] == 0
+    assert source.exists()
+
+    reviews = client.get("/api/sync/reviews?review_type=ticket_import").json()
+    assert len(reviews) == 1
+    review = client.get(f"/api/sync/reviews/{reviews[0]['id']}").json()
+    assert review["review_status"] == "pending"
+    assert review["target_id"] == "system-core-data-spine"
+    assert review["proposed_changes"]["source_preserved"] is True
+    ticket = review["proposed_changes"]["ticket"]
+    assert ticket["classification"] == "current"
+    assert ticket["target_epic"] == "Epic 3"
+    assert ticket["source_path"] == "Campaign Management/operational/tickets/system-core-data-spine.md"
+
+
+def test_apply_accepted_ticket_import_keeps_source_file(tmp_path, monkeypatch):
+    source = write_ticket_source(tmp_path)
+    monkeypatch.setattr(tickets_router, "_vault_root", lambda: tmp_path)
+    staged = client.post("/api/tickets/import/review").json()
+    review_id = staged["created"][0]["review_id"]
+
+    decision = client.patch(f"/api/sync/reviews/{review_id}", json={"review_status": "accepted"})
+    assert decision.status_code == 200
+    applied = client.post(f"/api/sync/reviews/{review_id}/apply", json={"confirm": True})
+
+    assert applied.status_code == 200
+    assert applied.json()["source_files_deleted"] == 0
+    assert source.exists()
+
+    ticket = client.get("/api/tickets/system-core-data-spine").json()
+    assert ticket["id"] == "system-core-data-spine"
+    assert ticket["classification"] == "current"
+    assert ticket["target_epic"] == "Epic 3"
+    assert ticket["review_status"] == "accepted"
+    assert ticket["source_path"] == "Campaign Management/operational/tickets/system-core-data-spine.md"
