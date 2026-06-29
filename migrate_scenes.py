@@ -7,7 +7,7 @@ import psycopg2
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://kaihou_gm:kaihou_gm_dev@localhost:54329/kaihou_gm"
+    "postgresql://kaihou_gm:kaihou_gm_dev@127.0.0.1:54329/kaihou_gm"
 )
 
 DDL = """

@@ -13,6 +13,7 @@ router = APIRouter()
 
 VALID_TYPES = {"Hard", "Soft", "Cut", "Added", "Replacement", "Spotlight", "Bridge", ""}
 VALID_STATUSES = {"Draft", "Ready", "Played", "Cut"}
+VALID_PLACEMENTS = {"ordered", "floating", "backlog"}
 
 
 class SceneCreate(BaseModel):
@@ -20,6 +21,8 @@ class SceneCreate(BaseModel):
     type: str = ""
     status: str = "Draft"
     session_id: Optional[int] = None
+    placement: str = "backlog"
+    sort_order: int = 0
     description: str = ""
     location: list[str] = []
     cast: list[str] = []
@@ -60,18 +63,37 @@ class SceneCreate(BaseModel):
             raise ValueError(f"Invalid status: {v}")
         return v
 
+    @field_validator("placement")
+    @classmethod
+    def validate_placement(cls, v: str) -> str:
+        if v not in VALID_PLACEMENTS:
+            raise ValueError(f"Invalid placement: {v}")
+        return v
+
 
 class SceneSessionPatch(BaseModel):
     session_id: Optional[int] = None
+    placement: str | None = None
+    sort_order: int | None = None
+
+    @field_validator("placement")
+    @classmethod
+    def validate_placement(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_PLACEMENTS:
+            raise ValueError(f"Invalid placement: {v}")
+        return v
 
 
 def _scene_to_dict(scene: Scene) -> dict:
     return {
         "id": scene.id,
+        "graph_endpoint_id": scene.graph_endpoint_id or f"scene:{scene.id}",
         "title": scene.title,
         "type": scene.type,
         "status": scene.status,
         "session_id": scene.session_id,
+        "placement": scene.placement or "backlog",
+        "sort_order": scene.sort_order or 0,
         "description": scene.description,
         "location": list(scene.location or []),
         "cast": list(scene.cast or []),
@@ -96,6 +118,17 @@ def _scene_to_dict(scene: Scene) -> dict:
         "if_ignore": scene.if_ignore or "",
         "if_short": scene.if_short or "",
         "notes": scene.notes or "",
+        "body": scene.body or "",
+        "clues": scene.clues or [],
+        "planned_outcome": scene.planned_outcome or "",
+        "actual_outcome": scene.actual_outcome or "",
+        "foundry_export_status": scene.foundry_export_status or "not_exported",
+        "foundry_journal_id": scene.foundry_journal_id or "",
+        "source_path": scene.source_path or "",
+        "source_hash": scene.source_hash or "",
+        "visibility": scene.visibility or "gm",
+        "freshness_state": scene.freshness_state or "unknown",
+        "review_status": scene.review_status or "accepted",
         "pinned_material": list(scene.pinned_material or []),
     }
 
@@ -134,6 +167,8 @@ def create_scene(payload: SceneCreate, db: DBSession = Depends(get_db)) -> dict:
         type=payload.type,
         status=payload.status,
         session_id=payload.session_id,
+        placement=payload.placement if payload.session_id is not None else "backlog",
+        sort_order=payload.sort_order,
         description=payload.description,
         location=payload.location,
         cast=payload.cast,
@@ -177,6 +212,8 @@ def update_scene(scene_id: int, payload: SceneCreate, db: DBSession = Depends(ge
     scene.type = payload.type
     scene.status = payload.status
     scene.session_id = payload.session_id
+    scene.placement = payload.placement if payload.session_id is not None else "backlog"
+    scene.sort_order = payload.sort_order
     scene.description = payload.description
     scene.location = payload.location
     scene.cast = payload.cast
@@ -216,6 +253,12 @@ def patch_scene_session(scene_id: int, payload: SceneSessionPatch, db: DBSession
         raise HTTPException(status_code=404, detail=f"Scene {scene_id} not found")
 
     scene.session_id = payload.session_id
+    if payload.placement is not None:
+        scene.placement = payload.placement
+    elif payload.session_id is None:
+        scene.placement = "backlog"
+    if payload.sort_order is not None:
+        scene.sort_order = payload.sort_order
     db.commit()
     db.refresh(scene)
     return _scene_to_dict(scene)

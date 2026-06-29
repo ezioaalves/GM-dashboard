@@ -10,6 +10,9 @@ from .tickets_router import router as tickets_router
 from .scenes_router import router as scenes_router
 from .sessions_router import router as sessions_router
 from .sync_router import router as sync_router
+from .lore_router import router as lore_router
+from .threads_router import router as threads_router
+from .system_enums import enum_catalog
 
 
 app = FastAPI(title="Kaihou GM Dashboard", version="0.1.0")
@@ -17,6 +20,8 @@ app.include_router(tickets_router, prefix="/api")
 app.include_router(scenes_router, prefix="/api")
 app.include_router(sessions_router, prefix="/api")
 app.include_router(sync_router, prefix="/api")
+app.include_router(lore_router, prefix="/api")
+app.include_router(threads_router, prefix="/api")
 
 
 class SessionNoteRequest(BaseModel):
@@ -127,14 +132,19 @@ def preview_draft_save(draft_id: str, payload: SaveDraftRequest) -> dict[str, An
     return handle(services.preview_draft_save, draft_id, payload.target_path, markdown=payload.markdown)
 
 
-@app.get("/api/threads")
-def threads() -> list[dict]:
+@app.get("/api/threads/files")
+def thread_files() -> list[dict]:
     return handle(lambda: services.thread_files(services.find_vault_root()))
 
 
 @app.get("/api/foundry/status")
 def foundry_status() -> dict[str, Any]:
     return handle(lambda: services.foundry_status(services.find_vault_root()))
+
+
+@app.get("/api/system/enums")
+def system_enums() -> dict[str, list[str]]:
+    return enum_catalog()
 
 
 @app.get("/api/files/markdown")

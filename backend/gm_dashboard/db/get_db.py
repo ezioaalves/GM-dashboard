@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker, Session as SASession
 def _db_url() -> str:
     return os.environ.get(
         "DATABASE_URL",
-        "postgresql://kaihou_gm:kaihou_gm_dev@localhost:54329/kaihou_gm",
+        "postgresql://kaihou_gm:kaihou_gm_dev@127.0.0.1:54329/kaihou_gm",
     )
 
 

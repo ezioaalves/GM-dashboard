@@ -24,6 +24,15 @@ cd "Creation Zone/gm-dashboard"
 docker compose up -d postgres
 ```
 
+Run database migrations from the dashboard root. `backend/alembic/` is the
+canonical migration tree; the root `alembic.ini` is the only supported Alembic
+config.
+
+```bash
+cd "Creation Zone/gm-dashboard"
+PYTHONPATH=backend alembic -c alembic.ini upgrade head
+```
+
 The initial schema lives at `backend/gm_dashboard/db/schema.sql`. The v1
 cockpit endpoints are still Markdown-first; database-backed auth, durable draft
 state, projections, sheet records, and sync jobs can be layered onto this schema.

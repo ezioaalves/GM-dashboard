@@ -307,7 +307,7 @@ def stage_ticket_import_reviews() -> dict:
                       base_version, current_version, proposed_changes, review_status
                     )
                     VALUES (
-                      'ticket_import', 'vault_markdown', 'gm_dashboard_db', 'ticket', %(target_id)s,
+                      'ticket_import', 'vault', 'postgres', 'ticket', %(target_id)s,
                       '', %(current_version)s, %(proposed_changes)s, 'pending'
                     )
                     RETURNING id

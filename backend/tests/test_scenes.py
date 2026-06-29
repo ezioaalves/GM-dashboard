@@ -10,7 +10,7 @@ from gm_dashboard.api import app
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://kaihou_gm:kaihou_gm_dev@localhost:54329/kaihou_gm"
+    "postgresql://kaihou_gm:kaihou_gm_dev@127.0.0.1:54329/kaihou_gm"
 )
 
 client = TestClient(app)
@@ -293,10 +293,13 @@ def test_create_scene_with_session():
     session = seed_session()
     res = client.post("/api/scenes", json={
         "title": "Council Scene", "type": "Soft", "status": "Ready",
-        "session_id": session["id"],
+        "session_id": session["id"], "placement": "floating", "sort_order": 2,
     })
     assert res.status_code == 201
-    assert res.json()["session_id"] == session["id"]
+    data = res.json()
+    assert data["session_id"] == session["id"]
+    assert data["placement"] == "floating"
+    assert data["sort_order"] == 2
 
 
 def test_list_scenes_returns_seeded():
@@ -358,9 +361,12 @@ def test_patch_session():
     session = seed_session()
     scene = seed_scene()
     res = client.patch(f"/api/scenes/{scene['id']}/session",
-                       json={"session_id": session["id"]})
+                       json={"session_id": session["id"], "placement": "ordered", "sort_order": 4})
     assert res.status_code == 200
-    assert res.json()["session_id"] == session["id"]
+    data = res.json()
+    assert data["session_id"] == session["id"]
+    assert data["placement"] == "ordered"
+    assert data["sort_order"] == 4
 
 
 def test_patch_session_to_backlog():
@@ -368,7 +374,54 @@ def test_patch_session_to_backlog():
     scene = seed_scene({"session_id": session["id"]})
     res = client.patch(f"/api/scenes/{scene['id']}/session", json={"session_id": None})
     assert res.status_code == 200
-    assert res.json()["session_id"] is None
+    data = res.json()
+    assert data["session_id"] is None
+    assert data["placement"] == "backlog"
+
+
+def test_session_detail_groups_scene_placements_and_scene_order_replaces_assignments():
+    session = seed_session(number=20, name="Placement Test")
+    ordered = seed_scene({"title": "Opening", "session_id": session["id"]})
+    floating = seed_scene({"title": "Optional clue", "session_id": session["id"]})
+    backlog = seed_scene({"title": "Backlog pressure", "session_id": None})
+    removed = seed_scene({"title": "Removed scene", "session_id": session["id"]})
+
+    res = client.post(
+        f"/api/sessions/{session['id']}/scene-order",
+        json={
+            "ordered_scene_ids": [ordered["id"]],
+            "floating_scene_ids": [floating["id"]],
+            "backlog_scene_ids": [backlog["id"]],
+        },
+    )
+    assert res.status_code == 200
+    detail = res.json()
+    assert [scene["id"] for scene in detail["scenes"]["ordered"]] == [ordered["id"]]
+    assert [scene["id"] for scene in detail["scenes"]["floating"]] == [floating["id"]]
+    assert detail["scenes"]["backlog"] == []
+
+    assert client.get(f"/api/scenes/{backlog['id']}").json()["session_id"] is None
+    removed_scene = client.get(f"/api/scenes/{removed['id']}").json()
+    assert removed_scene["session_id"] is None
+    assert removed_scene["placement"] == "backlog"
+
+    detail_res = client.get(f"/api/sessions/{session['id']}")
+    assert detail_res.status_code == 200
+    assert detail_res.json()["scenes"]["ordered"][0]["title"] == "Opening"
+
+
+def test_session_scene_order_rejects_duplicate_scene_ids():
+    session = seed_session()
+    scene = seed_scene()
+    res = client.post(
+        f"/api/sessions/{session['id']}/scene-order",
+        json={
+            "ordered_scene_ids": [scene["id"]],
+            "floating_scene_ids": [scene["id"]],
+            "backlog_scene_ids": [],
+        },
+    )
+    assert res.status_code == 422
 
 
 def test_delete_scene():

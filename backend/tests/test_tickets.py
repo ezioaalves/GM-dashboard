@@ -11,7 +11,7 @@ from gm_dashboard import tickets_router
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://kaihou_gm:kaihou_gm_dev@localhost:54329/kaihou_gm"
+    "postgresql://kaihou_gm:kaihou_gm_dev@127.0.0.1:54329/kaihou_gm"
 )
 
 client = TestClient(app)
@@ -260,6 +260,8 @@ def test_stage_ticket_import_review_preserves_markdown(tmp_path, monkeypatch):
     assert len(reviews) == 1
     review = client.get(f"/api/sync/reviews/{reviews[0]['id']}").json()
     assert review["review_status"] == "pending"
+    assert review["source_surface"] == "vault"
+    assert review["target_surface"] == "postgres"
     assert review["target_id"] == "system-core-data-spine"
     assert review["proposed_changes"]["source_preserved"] is True
     ticket = review["proposed_changes"]["ticket"]
@@ -276,7 +278,14 @@ def test_apply_accepted_ticket_import_keeps_source_file(tmp_path, monkeypatch):
 
     decision = client.patch(f"/api/sync/reviews/{review_id}", json={"review_status": "accepted"})
     assert decision.status_code == 200
-    applied = client.post(f"/api/sync/reviews/{review_id}/apply", json={"confirm": True})
+    applied = client.post(
+        f"/api/sync/reviews/{review_id}/apply",
+        json={
+            "confirmation": True,
+            "selected_change_ids": ["ticket:system-core-data-spine"],
+            "target_surface": "postgres",
+        },
+    )
 
     assert applied.status_code == 200
     assert applied.json()["source_files_deleted"] == 0
@@ -288,3 +297,22 @@ def test_apply_accepted_ticket_import_keeps_source_file(tmp_path, monkeypatch):
     assert ticket["target_epic"] == "Epic 3"
     assert ticket["review_status"] == "accepted"
     assert ticket["source_path"] == "Campaign Management/operational/tickets/system-core-data-spine.md"
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT input_payload
+                FROM sync_jobs
+                WHERE review_id = %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (review_id,),
+            )
+            job = cur.fetchone()
+        assert job["input_payload"]["selected_change_ids"] == ["ticket:system-core-data-spine"]
+        assert job["input_payload"]["target_surface"] == "postgres"
+    finally:
+        conn.close()
