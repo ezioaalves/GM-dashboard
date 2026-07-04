@@ -193,6 +193,23 @@ def _seed_source() -> str:
         conn.close()
 
 
+def _seed_asset(source_path: str, title: str) -> dict:
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO lore_assets (source_path, asset_type, title)
+                VALUES (%s, 'image', %s)
+                RETURNING id, graph_endpoint_id
+                """,
+                (source_path, title),
+            )
+            return dict(cur.fetchone())
+    finally:
+        conn.close()
+
+
 def test_lore_source_api_filters_patches_and_composes_children():
     _clean()
     try:
@@ -1027,6 +1044,8 @@ def test_thread_summary_and_detail_compose_linked_entities_sessions_and_scenes()
         assert scene.status_code == 201
         scene_body = scene.json()
 
+        asset = _seed_asset("Lore/Assets/iron-keep-map.png", "Iron Keep Map")
+
         thread = client.post(
             "/api/threads",
             json={
@@ -1064,6 +1083,17 @@ def test_thread_summary_and_detail_compose_linked_entities_sessions_and_scenes()
             },
         )
         assert rel_scene.status_code == 201
+        rel_asset = client.post(
+            "/api/relationships",
+            json={
+                "source_type": "thread",
+                "source_id": "thread-detail-test",
+                "target_type": "asset",
+                "target_id": asset["graph_endpoint_id"],
+                "relationship_type": "illustrates",
+            },
+        )
+        assert rel_asset.status_code == 201
 
         summary = client.get("/api/threads/summary")
         assert summary.status_code == 200
@@ -1084,9 +1114,11 @@ def test_thread_summary_and_detail_compose_linked_entities_sessions_and_scenes()
         assert detail_body["linked"]["entities"][0]["slug"] == "iron-keep-thread-detail"
         assert detail_body["linked"]["sessions"][0]["number"] == 99
         assert detail_body["linked"]["scenes"][0]["title"] == "Thread Detail Scene"
+        assert detail_body["linked"]["assets"][0]["title"] == "Iron Keep Map"
         assert {row["relationship_type"] for row in detail_body["linked"]["relationships"]} == {
             "points_to",
             "advances",
+            "illustrates",
         }
     finally:
         _clean()

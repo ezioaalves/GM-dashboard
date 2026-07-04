@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from . import services
 from .db.get_db import get_connection, get_db
-from .db.models import LoreEntity, LoreRelationship, Scene, Session, Thread
+from .db.models import LoreAsset, LoreEntity, LoreRelationship, Scene, Session, Thread
 from .system_enums import FRESHNESS_STATES, REVIEW_STATUSES, VISIBILITIES
 
 router = APIRouter()
@@ -306,6 +306,18 @@ def _scene_summary(scene: Scene) -> dict:
     }
 
 
+def _asset_summary(asset: LoreAsset) -> dict:
+    return {
+        "id": str(asset.id),
+        "graph_endpoint_id": asset.graph_endpoint_id or f"asset:{asset.id}",
+        "title": asset.title,
+        "asset_type": asset.asset_type,
+        "usage": asset.usage,
+        "status": asset.status,
+        "freshness_state": asset.freshness_state or "unknown",
+    }
+
+
 def _relationship_to_dict(relationship: LoreRelationship) -> dict:
     return {
         "id": str(relationship.id),
@@ -341,6 +353,7 @@ def _thread_detail_to_dict(db: DBSession, thread: Thread) -> dict:
     entity_ids: set[str] = set()
     session_ids: set[int] = set(thread.sessions or [])
     scene_ids: set[int] = set()
+    asset_ids: set[str] = set()
     for relationship in relationships:
         pairs = [
             (relationship.source_type, relationship.source_id),
@@ -356,6 +369,8 @@ def _thread_detail_to_dict(db: DBSession, thread: Thread) -> dict:
                 session_ids.add(int(raw_id))
             elif endpoint_type == "scene" and raw_id.isdigit():
                 scene_ids.add(int(raw_id))
+            elif endpoint_type == "asset":
+                asset_ids.add(endpoint_id if endpoint_id.startswith("asset:") else f"asset:{raw_id}")
 
     entities = []
     if entity_ids:
@@ -376,11 +391,20 @@ def _thread_detail_to_dict(db: DBSession, thread: Thread) -> dict:
     scenes = []
     if scene_ids:
         scenes = db.query(Scene).filter(Scene.id.in_(scene_ids)).order_by(Scene.id.asc()).all()
+    assets = []
+    if asset_ids:
+        assets = (
+            db.query(LoreAsset)
+            .filter(LoreAsset.graph_endpoint_id.in_(asset_ids))
+            .order_by(LoreAsset.title.asc())
+            .all()
+        )
 
     detail["linked"] = {
         "entities": [_entity_summary(entity) for entity in entities],
         "sessions": [_session_summary(session) for session in sessions],
         "scenes": [_scene_summary(scene) for scene in scenes],
+        "assets": [_asset_summary(asset) for asset in assets],
         "relationships": [_relationship_to_dict(relationship) for relationship in relationships],
     }
     return detail

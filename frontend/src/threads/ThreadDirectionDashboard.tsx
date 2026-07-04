@@ -325,6 +325,7 @@ export default function ThreadDirectionDashboard({
               <LinkedSection title="Entities" rows={detail.linked.entities} getText={(row) => `${row.title} - ${row.entity_type}`} />
               <LinkedSection title="Sessions" rows={detail.linked.sessions} getText={(row) => `Session ${row.number} - ${row.name || row.status}`} />
               <LinkedSection title="Scenes" rows={detail.linked.scenes} getText={(row) => `${row.title} - ${row.purpose || row.status}`} />
+              <LinkedSection title="Assets" rows={detail.linked.assets} getText={(row) => `${row.title} - ${row.asset_type}`} />
               <LinkedSection title="Relationships" rows={detail.linked.relationships} getText={(row) => `${row.source_id} ${row.relationship_type} ${row.target_id || row.unresolved_target}`} />
             </>
           ) : (

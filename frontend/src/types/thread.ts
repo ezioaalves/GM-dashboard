@@ -61,6 +61,16 @@ export interface ThreadLinkedScene {
   freshness_state: string;
 }
 
+export interface ThreadLinkedAsset {
+  id: string;
+  graph_endpoint_id: string;
+  title: string;
+  asset_type: string;
+  usage: string;
+  status: string;
+  freshness_state: string;
+}
+
 export interface ThreadRelationship {
   id: string;
   source_type: string;
@@ -81,6 +91,7 @@ export interface ThreadDetail extends Thread {
     entities: ThreadLinkedEntity[];
     sessions: ThreadLinkedSession[];
     scenes: ThreadLinkedScene[];
+    assets: ThreadLinkedAsset[];
     relationships: ThreadRelationship[];
   };
 }

@@ -48,6 +48,7 @@ assert.match(threadDashboard, /Import Legacy/);
 assert.match(threadDashboard, /linked\.entities/);
 assert.match(threadDashboard, /linked\.sessions/);
 assert.match(threadDashboard, /linked\.scenes/);
+assert.match(threadDashboard, /linked\.assets/);
 assert.match(sceneForm, /Canonical target path/);
 assert.match(sceneForm, /Preview Save/);
 assert.match(sceneForm, /Confirm Save/);
