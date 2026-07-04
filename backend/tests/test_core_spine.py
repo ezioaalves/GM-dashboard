@@ -695,16 +695,12 @@ def test_lore_import_apply_alias_uses_generic_sync_review_apply_path():
         )
         assert decided.status_code == 200
 
-        unsupported = client.post(
+        missing_entity_payload = client.post(
             f"/api/lore/import/{review_id}/apply",
             json={"confirmation": True},
         )
-        assert unsupported.status_code == 409
-        assert "review_type=vault_import" in unsupported.json()["detail"]
-
-        freshness = client.get("/api/sync/freshness")
-        assert freshness.status_code == 200
-        assert freshness.json()["counts"]["blocked_jobs"] == 1
+        assert missing_entity_payload.status_code == 409
+        assert "vault_import review has no entity payload" in missing_entity_payload.json()["detail"]
     finally:
         _clean()
 

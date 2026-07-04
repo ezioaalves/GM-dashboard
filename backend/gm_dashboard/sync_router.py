@@ -309,6 +309,160 @@ def _apply_relationship_change(cur, review: dict) -> dict:
     return {"applied": True, "relationship_ids": relationship_ids}
 
 
+def _apply_vault_import(cur, review: dict) -> dict:
+    payload = review["proposed_changes"] or {}
+    entity_payload = payload.get("entity") or {}
+    if not entity_payload.get("slug"):
+        raise HTTPException(status_code=409, detail="vault_import review has no entity payload")
+
+    source_paths = payload.get("source_paths") or []
+    source_path = source_paths[0] if source_paths else ""
+
+    cur.execute(
+        """
+        INSERT INTO lore_entities (slug, title, entity_type, source_path, source_hash, review_status)
+        VALUES (%(slug)s, %(title)s, %(entity_type)s, %(source_path)s, %(source_hash)s, 'accepted')
+        ON CONFLICT (entity_type, slug) DO UPDATE SET
+          title = EXCLUDED.title,
+          entity_type = EXCLUDED.entity_type,
+          source_path = EXCLUDED.source_path,
+          source_hash = EXCLUDED.source_hash,
+          review_status = 'accepted',
+          updated_at = now()
+        RETURNING id, graph_endpoint_id
+        """,
+        {
+            "slug": entity_payload["slug"],
+            "title": entity_payload.get("title", entity_payload["slug"]),
+            "entity_type": entity_payload.get("entity_type", "article"),
+            "source_path": source_path,
+            "source_hash": review["current_version"],
+        },
+    )
+    entity_row = cur.fetchone()
+    entity_id = str(entity_row["id"])
+    graph_endpoint_id = entity_row["graph_endpoint_id"]
+
+    cur.execute(
+        """
+        INSERT INTO lore_sources (source_surface, source_path, source_hash, review_status)
+        VALUES ('vault', %(source_path)s, %(source_hash)s, 'accepted')
+        ON CONFLICT (source_surface, source_path) DO UPDATE SET
+          source_hash = EXCLUDED.source_hash,
+          review_status = 'accepted',
+          updated_at = now()
+        RETURNING id
+        """,
+        {"source_path": source_path, "source_hash": review["current_version"]},
+    )
+    source_id = str(cur.fetchone()["id"])
+    cur.execute(
+        "UPDATE lore_entities SET primary_source_id = %s WHERE id = %s",
+        (source_id, entity_id),
+    )
+
+    proposed_sections = payload.get("sections") or []
+    proposed_paths = {tuple(s["heading_path"]) for s in proposed_sections}
+    cur.execute("SELECT id, heading_path FROM lore_sections WHERE entity_id = %s", (entity_id,))
+    for row in cur.fetchall():
+        if tuple(row["heading_path"]) not in proposed_paths:
+            cur.execute("DELETE FROM lore_sections WHERE id = %s", (row["id"],))
+
+    for section in proposed_sections:
+        params = {
+            "source_id": source_id,
+            "entity_id": entity_id,
+            "heading": section["heading"],
+            "body": section["body"],
+            "section_order": section["section_order"],
+            "heading_path": section["heading_path"],
+            "start_line": section["start_line"],
+            "end_line": section["end_line"],
+        }
+        cur.execute(
+            """
+            INSERT INTO lore_sections (
+              source_id, entity_id, heading, body, section_order, heading_path,
+              start_line, end_line, review_status
+            )
+            SELECT %(source_id)s, %(entity_id)s, %(heading)s, %(body)s, %(section_order)s,
+                   %(heading_path)s, %(start_line)s, %(end_line)s, 'accepted'
+            WHERE NOT EXISTS (
+              SELECT 1 FROM lore_sections
+              WHERE entity_id = %(entity_id)s AND heading_path = %(heading_path)s
+            )
+            """,
+            params,
+        )
+        cur.execute(
+            """
+            UPDATE lore_sections
+            SET body = %(body)s, section_order = %(section_order)s,
+                start_line = %(start_line)s, end_line = %(end_line)s, updated_at = now()
+            WHERE entity_id = %(entity_id)s AND heading_path = %(heading_path)s
+            """,
+            params,
+        )
+
+    relationship_ids: list[str] = []
+    for relationship in payload.get("relationships") or []:
+        source_id_value = relationship.get("source_id") or graph_endpoint_id
+        target_id_value = relationship.get("target_id", "")
+        unresolved = relationship.get("unresolved_target", "")
+        cur.execute(
+            """
+            SELECT id FROM lore_relationships
+            WHERE source_type = 'entity' AND source_id = %(source_id)s
+              AND target_type = %(target_type)s
+              AND target_id = %(target_id)s
+              AND relationship_type = %(relationship_type)s
+            """,
+            {
+                "source_id": source_id_value,
+                "target_type": relationship["target_type"],
+                "target_id": target_id_value,
+                "relationship_type": relationship["relationship_type"],
+            },
+        )
+        if cur.fetchone():
+            continue
+        cur.execute(
+            """
+            INSERT INTO lore_relationships (
+              source_type, source_id, target_type, target_id, unresolved_target,
+              relationship_type, provenance, review_status
+            )
+            VALUES ('entity', %(source_id)s, %(target_type)s, %(target_id)s, %(unresolved_target)s,
+                    %(relationship_type)s, %(provenance)s, 'accepted')
+            RETURNING id
+            """,
+            {
+                "source_id": source_id_value,
+                "target_type": relationship["target_type"],
+                "target_id": target_id_value,
+                "unresolved_target": unresolved,
+                "relationship_type": relationship["relationship_type"],
+                "provenance": relationship.get("provenance", "manual"),
+            },
+        )
+        relationship_ids.append(str(cur.fetchone()["id"]))
+
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted', applied_at = now(), updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {
+        "applied": True,
+        "entity_id": entity_id,
+        "source_id": source_id,
+        "relationship_ids": relationship_ids,
+    }
+
+
 @router.get("/sync/reviews")
 def list_sync_reviews(
     review_status: str | None = None,
@@ -547,6 +701,12 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
 
             if review["review_type"] == "relationship_change" and review["target_type"] == "relationship":
                 result = _apply_relationship_change(cur, review)
+                result = _finish_apply_job(cur, job_id, result)
+                conn.commit()
+                return result
+
+            if review["review_type"] == "vault_import" and review["target_type"] == "entity":
+                result = _apply_vault_import(cur, review)
                 result = _finish_apply_job(cur, job_id, result)
                 conn.commit()
                 return result

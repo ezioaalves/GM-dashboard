@@ -29,7 +29,10 @@ def _clean() -> None:
         cur.execute("DELETE FROM tickets")
         cur.execute("DELETE FROM threads")
         cur.execute("DELETE FROM lore_relationships")
+        cur.execute("DELETE FROM lore_aliases")
+        cur.execute("DELETE FROM lore_sections")
         cur.execute("DELETE FROM lore_entities")
+        cur.execute("DELETE FROM lore_sources")
         cur.execute("DELETE FROM sync_reviews")
         cur.execute("DELETE FROM sync_jobs")
     conn.close()
@@ -76,6 +79,8 @@ def _seed_review(**overrides) -> dict:
         "target_surface": "postgres",
         "target_type": "relationship",
         "target_id": "",
+        "base_version": "",
+        "current_version": "",
         "proposed_changes": {},
     }
     base.update(overrides)
@@ -86,11 +91,12 @@ def _seed_review(**overrides) -> dict:
                 """
                 INSERT INTO sync_reviews (
                   review_type, source_surface, target_surface, target_type, target_id,
-                  proposed_changes, review_status
+                  base_version, current_version, proposed_changes, review_status
                 )
                 VALUES (
                   %(review_type)s, %(source_surface)s, %(target_surface)s, %(target_type)s,
-                  %(target_id)s, %(proposed_changes)s, %(review_status)s
+                  %(target_id)s, %(base_version)s, %(current_version)s,
+                  %(proposed_changes)s, %(review_status)s
                 )
                 RETURNING *
                 """,
@@ -300,3 +306,90 @@ def test_sync_freshness_reports_fresh_when_nothing_outstanding():
     data = res.json()
     assert data["state"] == "fresh"
     assert data["items"] == []
+
+
+VAULT_IMPORT_PAYLOAD = {
+    "diff_kind": "new",
+    "entity": {"slug": "kanigakure", "title": "Kanigakure", "entity_type": "location"},
+    "sections": [
+        {
+            "heading": "Overview",
+            "body": "Home base.",
+            "section_order": 0,
+            "heading_path": ["Overview"],
+            "start_line": 3,
+            "end_line": 5,
+        }
+    ],
+    "relationships": [
+        {
+            "source_type": "entity",
+            "target_type": "entity",
+            "relationship_type": "mentions",
+            "provenance": "wikilink",
+            "unresolved_target": "Someone Else",
+        }
+    ],
+    "source_paths": ["Lore/World_of_Rokugan/Locations/Kani.md"],
+    "metadata": {},
+}
+
+
+def test_apply_vault_import_creates_entity_sections_and_relationships():
+    review = _seed_review(
+        review_type="vault_import",
+        target_type="entity",
+        target_id="",
+        base_version="",
+        current_version="hash-a",
+        review_status="accepted",
+        proposed_changes=VAULT_IMPORT_PAYLOAD,
+    )
+
+    applied = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["applied"] is True
+    assert body["entity_id"]
+    assert body["source_id"]
+    assert len(body["relationship_ids"]) == 1
+
+    entity = client.get(f"/api/lore/entities/{body['entity_id']}")
+    assert entity.status_code == 200
+    entity_body = entity.json()
+    assert entity_body["slug"] == "kanigakure"
+    assert entity_body["source_hash"] == "hash-a"
+    assert [s["heading"] for s in entity_body["sections"]] == ["Overview"]
+    assert len(entity_body["relationships"]) == 1
+    assert entity_body["relationships"][0]["unresolved_target"] == "Someone Else"
+
+
+def test_apply_vault_import_without_entity_payload_returns_409():
+    review = _seed_review(
+        review_type="vault_import",
+        target_type="entity",
+        review_status="accepted",
+        proposed_changes={"source_paths": [], "metadata": {}},
+    )
+    res = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert res.status_code == 409
+    assert "vault_import review has no entity payload" in res.json()["detail"]
+
+
+def test_apply_vault_import_reapply_updates_sections_without_duplicating():
+    review = _seed_review(
+        review_type="vault_import",
+        target_type="entity",
+        current_version="hash-a",
+        review_status="accepted",
+        proposed_changes=VAULT_IMPORT_PAYLOAD,
+    )
+    first = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert first.status_code == 200
+
+    second = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert second.status_code == 200
+    assert second.json()["already_applied"] is True
+
+    entity = client.get(f"/api/lore/entities/{first.json()['entity_id']}")
+    assert len(entity.json()["sections"]) == 1
