@@ -200,17 +200,22 @@ def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
     new = 0
     changed = 0
     unchanged = 0
+    errors = 0
     review_ids: list[str] = []
 
     if not lore_dir.exists():
-        return {"scanned": 0, "new": 0, "changed": 0, "unchanged": 0, "review_ids": []}
+        return {"scanned": 0, "new": 0, "changed": 0, "unchanged": 0, "errors": 0, "review_ids": []}
 
     for path in sorted(lore_dir.rglob("*.md")):
         if not is_scannable(path, vault_root):
             continue
-        scanned += 1
         rel_path = str(path.relative_to(vault_root))
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            errors += 1
+            continue
+        scanned += 1
         source_hash = compute_source_hash(text)
 
         cur.execute(
@@ -306,5 +311,6 @@ def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
         "new": new,
         "changed": changed,
         "unchanged": unchanged,
+        "errors": errors,
         "review_ids": review_ids,
     }

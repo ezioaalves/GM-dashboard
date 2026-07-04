@@ -1150,7 +1150,24 @@ def scan_lore_vault(dry_run: bool = False) -> dict:
             )
             job_id = str(cur.fetchone()["id"])
 
-            summary = scan_vault(vault_root, cur, dry_run=False)
+            try:
+                summary = scan_vault(vault_root, cur, dry_run=False)
+            except Exception as exc:
+                error_message = str(exc)
+                cur.execute(
+                    """
+                    UPDATE sync_jobs
+                    SET status = 'failed',
+                        error = %(error)s,
+                        error_code = 'scan_error',
+                        error_message = %(error)s,
+                        finished_at = now(),
+                        updated_at = now()
+                    WHERE id = %(id)s
+                    """,
+                    {"id": job_id, "error": error_message},
+                )
+                raise
 
             cur.execute(
                 """

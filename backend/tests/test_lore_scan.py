@@ -255,6 +255,24 @@ def test_scan_vault_skips_drafts_and_templates(tmp_path):
     assert summary["review_ids"] == []
 
 
+def test_scan_vault_skips_unreadable_file_and_counts_it_as_error(tmp_path):
+    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nHome base.\n")
+    bad = tmp_path / "Lore" / "World_of_Rokugan" / "Locations" / "Bad.md"
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    bad.write_bytes(b"\xff\xfe# Bad\n")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_vault(tmp_path, cur)
+    finally:
+        conn.close()
+
+    assert summary["new"] == 1
+    assert summary["errors"] == 1
+    assert len(summary["review_ids"]) == 1
+
+
 def test_scan_vault_dry_run_creates_no_reviews(tmp_path):
     _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nHome base.\n")
 

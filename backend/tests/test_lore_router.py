@@ -338,3 +338,35 @@ def test_scan_lore_vault_creates_job_and_reviews(tmp_path, monkeypatch):
     review = client.get(f"/api/sync/reviews/{body['review_ids'][0]}")
     assert review.status_code == 200
     assert review.json()["review_type"] == "vault_import"
+
+
+def test_scan_lore_vault_marks_job_failed_when_scan_raises(tmp_path, monkeypatch):
+    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations").mkdir(parents=True)
+    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations" / "Kani.md").write_text(
+        "# Kanigakure\n\n## Overview\nHome base.\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("scan exploded")
+
+    monkeypatch.setattr("gm_dashboard.lore_router.scan_vault", _boom)
+
+    with pytest.raises(RuntimeError, match="scan exploded"):
+        client.post("/api/lore/import/scan")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT status, error_code, error_message, finished_at FROM sync_jobs "
+                "WHERE job_type = 'vault_scan' ORDER BY started_at DESC LIMIT 1"
+            )
+            row = dict(cur.fetchone())
+    finally:
+        conn.close()
+
+    assert row["status"] == "failed"
+    assert row["error_code"] == "scan_error"
+    assert row["error_message"] == "scan exploded"
+    assert row["finished_at"] is not None
