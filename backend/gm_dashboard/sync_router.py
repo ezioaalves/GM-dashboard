@@ -195,6 +195,66 @@ def _apply_ticket_import(cur, review: dict) -> dict:
     return {"applied": True, "ticket_id": ticket_id, "source_files_deleted": 0}
 
 
+def _apply_thread_import(cur, review: dict) -> dict:
+    payload = review["proposed_changes"] or {}
+    thread = payload.get("thread") or {}
+    if not thread.get("id"):
+        raise HTTPException(status_code=409, detail="thread_import review has no thread payload")
+
+    cur.execute(
+        """
+        INSERT INTO threads (
+          id, title, status, priority, arc, theme, pressure, stakes, next_move,
+          clock_label, clock_value, clock_max, unresolved_questions, last_touched_at,
+          visibility, freshness_state, review_status, factions, sessions, vault_path, body
+        )
+        VALUES (
+          %(id)s, %(title)s, %(status)s, %(priority)s, %(arc)s, %(theme)s,
+          %(pressure)s, %(stakes)s, %(next_move)s, %(clock_label)s, %(clock_value)s,
+          %(clock_max)s, %(unresolved_questions)s, %(last_touched_at)s,
+          %(visibility)s, %(freshness_state)s, 'accepted', %(factions)s,
+          %(sessions)s, %(vault_path)s, %(body)s
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          title = EXCLUDED.title,
+          status = EXCLUDED.status,
+          priority = EXCLUDED.priority,
+          arc = EXCLUDED.arc,
+          theme = EXCLUDED.theme,
+          pressure = EXCLUDED.pressure,
+          stakes = EXCLUDED.stakes,
+          next_move = EXCLUDED.next_move,
+          clock_label = EXCLUDED.clock_label,
+          clock_value = EXCLUDED.clock_value,
+          clock_max = EXCLUDED.clock_max,
+          unresolved_questions = EXCLUDED.unresolved_questions,
+          last_touched_at = EXCLUDED.last_touched_at,
+          visibility = EXCLUDED.visibility,
+          freshness_state = EXCLUDED.freshness_state,
+          review_status = 'accepted',
+          factions = EXCLUDED.factions,
+          sessions = EXCLUDED.sessions,
+          vault_path = EXCLUDED.vault_path,
+          body = EXCLUDED.body,
+          updated_at = now()
+        RETURNING id
+        """,
+        thread,
+    )
+    thread_id = cur.fetchone()["id"]
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted',
+            applied_at = now(),
+            updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {"applied": True, "thread_id": thread_id, "source_files_deleted": 0}
+
+
 def _apply_relationship_change(cur, review: dict) -> dict:
     payload = review["proposed_changes"] or {}
     relationships = payload.get("relationships") or []
@@ -475,6 +535,12 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
             job_id = _insert_apply_job(cur, review, payload.audit_payload(review))
             if review["review_type"] == "ticket_import" and review["target_type"] == "ticket":
                 result = _apply_ticket_import(cur, review)
+                result = _finish_apply_job(cur, job_id, result)
+                conn.commit()
+                return result
+
+            if review["review_type"] == "thread_import" and review["target_type"] == "thread":
+                result = _apply_thread_import(cur, review)
                 result = _finish_apply_job(cur, job_id, result)
                 conn.commit()
                 return result

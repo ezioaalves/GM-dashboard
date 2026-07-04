@@ -51,6 +51,7 @@ button:disabled {
 }
 
 input,
+select,
 textarea,
 pre {
   background: #111312;
@@ -63,6 +64,12 @@ pre {
 }
 
 input {
+  font-family: inherit;
+  min-height: 40px;
+}
+
+select {
+  color-scheme: dark;
   font-family: inherit;
   min-height: 40px;
 }
@@ -334,6 +341,313 @@ pre {
   gap: var(--space-2);
   grid-template-columns: repeat(2, minmax(260px, 1fr));
   margin-top: var(--space-3);
+}
+
+/* Thread Direction */
+.thread-dashboard {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.thread-summary-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+}
+
+.thread-summary-card {
+  background: #151a17;
+  border: 1px solid #334039;
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-1);
+  min-height: 76px;
+  padding: var(--space-3);
+}
+
+.thread-summary-card span {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.thread-summary-card strong {
+  color: #f1f3ee;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.thread-summary-card.warn {
+  border-color: #8a7040;
+}
+
+.thread-summary-card.bad {
+  border-color: #8f5558;
+}
+
+.thread-next-move {
+  background: #141816;
+  border: 1px solid #334039;
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+}
+
+.thread-next-move span {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.thread-next-move strong {
+  color: #f1f3ee;
+  font-size: var(--text-base);
+}
+
+.thread-next-move p {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.thread-toolbar {
+  align-items: end;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(280px, 1fr) minmax(180px, 240px);
+}
+
+.thread-layout {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr);
+}
+
+.thread-list,
+.thread-detail {
+  background: #141816;
+  border: 1px solid #2d3530;
+  border-radius: var(--radius-lg);
+  min-height: 520px;
+  padding: var(--space-3);
+}
+
+.thread-list-header {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: var(--text-xs);
+  font-weight: 650;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  text-transform: uppercase;
+}
+
+.thread-row {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  min-height: 64px;
+  padding: var(--space-2);
+  text-align: left;
+  width: 100%;
+}
+
+.thread-row:hover,
+.thread-row.active {
+  background: #1c231f;
+  border-color: #3b4741;
+}
+
+.thread-state-dot {
+  align-self: center;
+  border-radius: 999px;
+  height: 8px;
+  width: 8px;
+}
+
+.thread-state-dot.ok {
+  background: #6faa7f;
+}
+
+.thread-state-dot.warn {
+  background: #bd9450;
+}
+
+.thread-state-dot.bad {
+  background: #bb676c;
+}
+
+.thread-row-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.thread-row-main strong {
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-row-main span {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-priority,
+.thread-chip {
+  align-self: center;
+  border: 1px solid #46524c;
+  border-radius: 999px;
+  color: #d7dcd4;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 2px var(--space-2);
+  text-transform: uppercase;
+}
+
+.priority-urgent {
+  border-color: #b76468;
+  color: #ffdadd;
+}
+
+.priority-high {
+  border-color: #b99256;
+  color: #ffe7be;
+}
+
+.thread-detail {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.thread-detail-header {
+  align-items: start;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.thread-kicker {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: flex;
+  font-size: var(--text-xs);
+  gap: var(--space-1);
+}
+
+.thread-detail h3,
+.thread-linked-section h4 {
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.thread-detail h3 {
+  font-size: var(--text-lg);
+}
+
+.thread-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.thread-direction-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.thread-info-block {
+  background: #111513;
+  border: 1px solid #2c3530;
+  border-radius: var(--radius-md);
+  min-height: 92px;
+  padding: var(--space-3);
+}
+
+.thread-info-block span {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.thread-info-block p {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  margin: var(--space-2) 0 0;
+}
+
+.thread-warning {
+  align-items: center;
+  background: #2b2319;
+  border: 1px solid #705a35;
+  border-radius: var(--radius-md);
+  color: #f0d6ad;
+  display: flex;
+  font-size: var(--text-sm);
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.thread-edit-form {
+  border-top: 1px solid #2a302c;
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.thread-edit-form textarea {
+  min-height: 88px;
+}
+
+.thread-clock-row {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) 88px 88px;
+}
+
+.thread-linked-section {
+  border-top: 1px solid #2a302c;
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+
+.thread-linked-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.thread-linked-row {
+  background: #111513;
+  border: 1px solid #29322d;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  padding: var(--space-2) var(--space-3);
+}
+
+.thread-muted,
+.thread-empty {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin: 0;
 }
 
 /* Card */

@@ -102,7 +102,7 @@ def upgrade() -> None:
             id          SERIAL PRIMARY KEY,
             number      INTEGER NOT NULL UNIQUE,
             name        TEXT NOT NULL DEFAULT '',
-            status      TEXT NOT NULL DEFAULT 'Planned',
+            status      TEXT NOT NULL DEFAULT 'planned',
             date        DATE,
             notes       TEXT NOT NULL DEFAULT '',
             created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),

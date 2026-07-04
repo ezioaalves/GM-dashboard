@@ -11,9 +11,11 @@ from sqlalchemy.orm import DeclarativeBase, relationship
 
 
 class SessionStatus(str, enum.Enum):
-    PLANNED = "Planned"
-    ACTIVE = "Active"
-    PLAYED = "Played"
+    PLANNED = "planned"
+    READY = "ready"
+    PLAYED = "played"
+    CANCELLED = "cancelled"
+    ARCHIVED = "archived"
 
 
 class Base(DeclarativeBase):
@@ -68,7 +70,7 @@ class SyncJob(Base):
     id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     target = Column(Text, nullable=False)
     direction = Column(Text, nullable=False)
-    status = Column(Text, nullable=False, server_default="pending")
+    status = Column(Text, nullable=False, server_default="queued")
     diff = Column(Text, nullable=False, server_default="")
     job_type = Column(Text, nullable=False, server_default="legacy")
     source_surface = Column(Text, nullable=False, server_default="manual")
@@ -397,7 +399,7 @@ class Thread(Base):
     vault_path = Column(Text)
     body = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class NPC(Base):

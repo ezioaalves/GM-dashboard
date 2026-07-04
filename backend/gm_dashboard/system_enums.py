@@ -50,6 +50,7 @@ ASSET_MIRROR_STATES = frozenset(
 )
 
 SESSION_STATUSES = frozenset({"planned", "ready", "played", "cancelled", "archived"})
+LEGACY_SESSION_STATUSES = frozenset({"Planned", "Active", "Played"})
 
 SCENE_PLACEMENTS = frozenset({"ordered", "floating", "backlog"})
 
@@ -63,6 +64,7 @@ def enum_catalog() -> dict[str, list[str]]:
         "relationship_provenances": sorted(RELATIONSHIP_PROVENANCES),
         "review_statuses": sorted(REVIEW_STATUSES),
         "scene_placements": sorted(SCENE_PLACEMENTS),
+        "legacy_session_statuses": sorted(LEGACY_SESSION_STATUSES),
         "session_statuses": sorted(SESSION_STATUSES),
         "source_surfaces": sorted(SOURCE_SURFACES),
         "sync_job_statuses": sorted(SYNC_JOB_STATUSES),

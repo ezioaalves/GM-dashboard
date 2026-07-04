@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Session, SessionCreate, SessionUpdate } from "../types/session";
+import type { Session, SessionCreate, SessionStatus, SessionUpdate } from "../types/session";
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
@@ -59,7 +59,7 @@ export function usePatchSessionStatus() {
   return useMutation<
     { id: number; status: string },
     Error,
-    { id: number; status: "Planned" | "Active" | "Played" }
+    { id: number; status: SessionStatus }
   >({
     mutationFn: ({ id, status }) =>
       apiFetch<{ id: number; status: string }>(`/api/sessions/${id}/status`, {

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 
 import psycopg2
 import psycopg2.extras
+import pytest
 from fastapi.testclient import TestClient
 
 from gm_dashboard.api import app
@@ -517,6 +519,39 @@ def test_relationship_and_asset_patch_routes():
         _clean()
 
 
+def test_relationship_filters_normalize_raw_endpoint_ids():
+    _clean()
+    try:
+        rel = client.post(
+            "/api/relationships",
+            json={
+                "source_type": "scene",
+                "source_id": "42",
+                "target_type": "thread",
+                "target_id": "shadowlands-pressure",
+                "relationship_type": "advances",
+            },
+        )
+        assert rel.status_code == 201
+        assert rel.json()["source_id"] == "scene:42"
+        assert rel.json()["target_id"] == "thread:shadowlands-pressure"
+
+        by_raw_source = client.get("/api/relationships?source_type=scene&source_id=42")
+        assert by_raw_source.status_code == 200
+        assert [row["id"] for row in by_raw_source.json()] == [rel.json()["id"]]
+
+        by_raw_target = client.get(
+            "/api/relationships?target_type=thread&target_id=shadowlands-pressure"
+        )
+        assert by_raw_target.status_code == 200
+        assert [row["id"] for row in by_raw_target.json()] == [rel.json()["id"]]
+
+        invalid = client.get("/api/relationships?source_type=scene&source_id=thread:wrong")
+        assert invalid.status_code == 422
+    finally:
+        _clean()
+
+
 def test_relationship_review_stages_then_applies_graph_edges():
     _clean()
     try:
@@ -587,6 +622,76 @@ def test_relationship_review_stages_then_applies_graph_edges():
         _clean()
 
 
+def test_lore_import_review_alias_stages_vault_import_in_sync_reviews():
+    _clean()
+    try:
+        review = client.post(
+            "/api/lore/import/review",
+            json={
+                "target_type": "entity",
+                "target_id": "entity:kaguya-haiiro",
+                "base_version": "hash-a",
+                "current_version": "hash-b",
+                "source_paths": ["Lore/NPCs/Haiiro.md"],
+                "proposed_changes": {"entity": {"slug": "kaguya-haiiro"}},
+                "metadata": {"importer": "test"},
+            },
+        )
+        assert review.status_code == 201
+        body = review.json()
+        assert body["review_type"] == "vault_import"
+        assert body["source_surface"] == "vault"
+        assert body["target_surface"] == "postgres"
+        assert body["review_status"] == "pending"
+        assert body["proposed_changes"]["source_paths"] == ["Lore/NPCs/Haiiro.md"]
+        assert body["proposed_changes"]["entity"]["slug"] == "kaguya-haiiro"
+
+        listed = client.get("/api/sync/reviews?review_type=vault_import&target_type=entity")
+        assert listed.status_code == 200
+        assert [row["id"] for row in listed.json()] == [body["id"]]
+
+        invalid = client.post(
+            "/api/lore/import/review",
+            json={"target_type": "downtime_action"},
+        )
+        assert invalid.status_code == 422
+    finally:
+        _clean()
+
+
+def test_lore_import_apply_alias_uses_generic_sync_review_apply_path():
+    _clean()
+    try:
+        review = client.post(
+            "/api/lore/import/review",
+            json={"target_type": "entity", "target_id": "entity:kaguya-haiiro"},
+        )
+        assert review.status_code == 201
+        review_id = review.json()["id"]
+
+        unconfirmed = client.post(f"/api/lore/import/{review_id}/apply", json={})
+        assert unconfirmed.status_code == 422
+
+        decided = client.patch(
+            f"/api/sync/reviews/{review_id}",
+            json={"review_status": "accepted", "decision": {"accepted_all": True}},
+        )
+        assert decided.status_code == 200
+
+        unsupported = client.post(
+            f"/api/lore/import/{review_id}/apply",
+            json={"confirmation": True},
+        )
+        assert unsupported.status_code == 409
+        assert "review_type=vault_import" in unsupported.json()["detail"]
+
+        freshness = client.get("/api/sync/freshness")
+        assert freshness.status_code == 200
+        assert freshness.json()["counts"]["blocked_jobs"] == 1
+    finally:
+        _clean()
+
+
 def test_review_apply_is_auditable_and_repeat_apply_returns_existing_job():
     _clean()
     try:
@@ -647,6 +752,52 @@ def test_review_apply_is_auditable_and_repeat_apply_returns_existing_job():
         assert relationships.status_code == 200
         assert len(relationships.json()) == 1
     finally:
+        _clean()
+
+
+def test_core_spine_database_constraints_guard_shared_states():
+    _clean()
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO sync_jobs (target, direction)
+                VALUES ('entity:constraint-test', 'manual_to_postgres')
+                RETURNING status
+                """
+            )
+            assert cur.fetchone()["status"] == "queued"
+
+            with pytest.raises(psycopg2.errors.CheckViolation):
+                cur.execute(
+                    """
+                    INSERT INTO sync_reviews (
+                      review_type, source_surface, target_surface, target_type, review_status
+                    )
+                    VALUES ('vault_import', 'bad_surface', 'postgres', 'entity', 'pending')
+                    """
+                )
+
+            with pytest.raises(psycopg2.errors.CheckViolation):
+                cur.execute(
+                    """
+                    INSERT INTO lore_relationships (
+                      source_type, source_id, target_type, target_id, relationship_type
+                    )
+                    VALUES ('bad_type', 'bad:1', 'entity', 'entity:1', 'mentions')
+                    """
+                )
+
+            with pytest.raises(psycopg2.errors.CheckViolation):
+                cur.execute(
+                    """
+                    INSERT INTO scenes (title, placement)
+                    VALUES ('Bad placement', 'sideboard')
+                    """
+                )
+    finally:
+        conn.close()
         _clean()
 
 
@@ -716,6 +867,7 @@ def test_graph_endpoint_ids_support_thread_session_scene_relationships():
         assert session_res.status_code == 201
         session = session_res.json()
         assert session["graph_endpoint_id"] == f"session:{session['id']}"
+        assert session["status"] == "planned"
 
         scene_res = client.post(
             "/api/scenes",
@@ -840,6 +992,183 @@ def test_thread_api_validates_shared_states():
         _clean()
 
 
+def test_thread_summary_and_detail_compose_linked_entities_sessions_and_scenes():
+    _clean()
+    try:
+        source_id = _seed_source()
+        entity = client.post(
+            "/api/lore/entities",
+            json={
+                "slug": "iron-keep-thread-detail",
+                "title": "Iron Keep Thread Detail",
+                "entity_type": "location",
+                "primary_source_id": source_id,
+            },
+        )
+        assert entity.status_code == 201
+        entity_body = entity.json()
+
+        session = client.post(
+            "/api/sessions",
+            json={"number": 99, "name": "Thread Detail Session", "status": "Planned"},
+        )
+        assert session.status_code == 201
+        session_body = session.json()
+
+        scene = client.post(
+            "/api/scenes",
+            json={
+                "title": "Thread Detail Scene",
+                "status": "Draft",
+                "session_id": session_body["id"],
+                "purpose": "Force a direction choice.",
+            },
+        )
+        assert scene.status_code == 201
+        scene_body = scene.json()
+
+        thread = client.post(
+            "/api/threads",
+            json={
+                "id": "thread-detail-test",
+                "title": "Thread Detail Test",
+                "status": "active",
+                "priority": "urgent",
+                "next_move": "Frame the Iron Keep choice.",
+                "sessions": [99],
+                "last_touched_at": datetime.now(UTC).isoformat(),
+                "freshness_state": "fresh",
+            },
+        )
+        assert thread.status_code == 201
+
+        rel_entity = client.post(
+            "/api/relationships",
+            json={
+                "source_type": "thread",
+                "source_id": "thread-detail-test",
+                "target_type": "entity",
+                "target_id": entity_body["graph_endpoint_id"],
+                "relationship_type": "points_to",
+            },
+        )
+        assert rel_entity.status_code == 201
+        rel_scene = client.post(
+            "/api/relationships",
+            json={
+                "source_type": "scene",
+                "source_id": str(scene_body["id"]),
+                "target_type": "thread",
+                "target_id": "thread-detail-test",
+                "relationship_type": "advances",
+            },
+        )
+        assert rel_scene.status_code == 201
+
+        summary = client.get("/api/threads/summary")
+        assert summary.status_code == 200
+        assert summary.json()["active"] == 1
+        assert summary.json()["high_priority"] == 1
+        assert summary.json()["next_moves"][0]["id"] == "thread-detail-test"
+        assert summary.json()["next_campaign_move"]["id"] == "thread-detail-test"
+
+        cockpit = client.get("/api/cockpit/thread-direction")
+        assert cockpit.status_code == 200
+        assert cockpit.json()["next_campaign_move"]["next_move"] == "Frame the Iron Keep choice."
+        assert cockpit.json()["active_pressure"][0]["id"] == "thread-detail-test"
+
+        detail = client.get("/api/threads/thread-detail-test")
+        assert detail.status_code == 200
+        detail_body = detail.json()
+        assert detail_body["stale_state"]["state"] == "current"
+        assert detail_body["linked"]["entities"][0]["slug"] == "iron-keep-thread-detail"
+        assert detail_body["linked"]["sessions"][0]["number"] == 99
+        assert detail_body["linked"]["scenes"][0]["title"] == "Thread Detail Scene"
+        assert {row["relationship_type"] for row in detail_body["linked"]["relationships"]} == {
+            "points_to",
+            "advances",
+        }
+    finally:
+        _clean()
+
+
+def test_thread_import_review_applies_legacy_thread_payload():
+    _clean()
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO sync_reviews (
+                  review_type, source_surface, target_surface, target_type, target_id,
+                  current_version, proposed_changes
+                )
+                VALUES (
+                  'thread_import', 'vault', 'postgres', 'thread', 'legacy-thread-test',
+                  'sha256:legacy',
+                  %(proposed_changes)s
+                )
+                RETURNING id
+                """,
+                {
+                    "proposed_changes": psycopg2.extras.Json(
+                        {
+                            "action": "import_thread",
+                            "thread": {
+                                "id": "legacy-thread-test",
+                                "title": "Legacy Thread Test",
+                                "status": "active",
+                                "priority": "high",
+                                "arc": None,
+                                "theme": "",
+                                "pressure": "",
+                                "stakes": "",
+                                "next_move": "Make the imported thread visible.",
+                                "clock_label": None,
+                                "clock_value": None,
+                                "clock_max": None,
+                                "unresolved_questions": [],
+                                "last_touched_at": None,
+                                "visibility": "gm",
+                                "freshness_state": "fresh",
+                                "review_status": "pending",
+                                "factions": ["Kaguya Haiiro"],
+                                "sessions": [17],
+                                "vault_path": "Campaign Management/authorial/threads/legacy-thread-test.md",
+                                "body": "# Legacy Thread Test",
+                            },
+                            "source_preserved": True,
+                        }
+                    )
+                },
+            )
+            review_id = str(cur.fetchone()["id"])
+
+        accepted = client.patch(
+            f"/api/sync/reviews/{review_id}",
+            json={"review_status": "accepted", "decision": {"note": "test apply"}},
+        )
+        assert accepted.status_code == 200
+
+        applied = client.post(
+            f"/api/sync/reviews/{review_id}/apply",
+            json={"confirmation": True},
+        )
+        assert applied.status_code == 200
+        assert applied.json()["thread_id"] == "legacy-thread-test"
+        assert applied.json()["source_files_deleted"] == 0
+
+        detail = client.get("/api/threads/legacy-thread-test")
+        assert detail.status_code == 200
+        body = detail.json()
+        assert body["title"] == "Legacy Thread Test"
+        assert body["next_move"] == "Make the imported thread visible."
+        assert body["sessions"] == [17]
+    finally:
+        conn.close()
+        _clean()
+
+
 def test_system_enum_catalog_matches_spine_contract_values():
     res = client.get("/api/system/enums")
     assert res.status_code == 200
@@ -863,5 +1192,7 @@ def test_system_enum_catalog_matches_spine_contract_values():
         "stale_source_changed",
         "unknown",
     ]
+    assert data["legacy_session_statuses"] == ["Active", "Planned", "Played"]
     assert data["graph_endpoint_types"] == ["asset", "entity", "scene", "session", "thread"]
     assert data["scene_placements"] == ["backlog", "floating", "ordered"]
+    assert data["session_statuses"] == ["archived", "cancelled", "planned", "played", "ready"]

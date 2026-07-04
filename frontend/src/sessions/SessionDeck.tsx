@@ -2,14 +2,20 @@ import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useSessionsQuery } from "../api/sessions";
-import type { Session, SessionNote } from "../types/session";
+import type { Session, SessionNote, SessionStatus } from "../types/session";
 import { DeckCard } from "../deck/DeckCard";
 import { DeckModal } from "../deck/DeckModal";
 import { SessionCard } from "./SessionCard";
 import { SessionForm } from "./SessionForm";
 
-const SESSION_STATUSES = ["Planned", "Active", "Played"] as const;
-type SessionStatus = typeof SESSION_STATUSES[number];
+const SESSION_STATUSES: SessionStatus[] = ["planned", "ready", "played", "cancelled", "archived"];
+const STATUS_LABELS: Record<SessionStatus, string> = {
+  planned: "Planned",
+  ready: "Ready",
+  played: "Played",
+  cancelled: "Cancelled",
+  archived: "Archived",
+};
 
 interface SessionDeckProps {
   onStatusChange: (msg: string) => void;
@@ -32,9 +38,9 @@ function groupSessions(sessions: Session[]): Record<SessionStatus, Session[]> {
     SESSION_STATUSES.map((status) => [status, [] as Session[]])
   ) as Record<SessionStatus, Session[]>;
   for (const session of sessions) {
-    const key = SESSION_STATUSES.includes(session.status as SessionStatus)
-      ? (session.status as SessionStatus)
-      : "Planned";
+    const key = SESSION_STATUSES.includes(session.status)
+      ? session.status
+      : "planned";
     groups[key].push(session);
   }
   return groups;
@@ -139,7 +145,7 @@ export default function SessionDeck({ onStatusChange, onErrorChange, runAction, 
         {SESSION_STATUSES.map((status) => (
           <section key={status} className="deck-session-group session-status-group">
             <div className="deck-session-header">
-              {status}
+              {STATUS_LABELS[status]}
               <span className="deck-session-count">{grouped[status].length}</span>
             </div>
             <div className="deck-card-grid session-card-grid">

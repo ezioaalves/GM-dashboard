@@ -41,11 +41,14 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   target text NOT NULL,
   direction text NOT NULL,
-  status text NOT NULL DEFAULT 'pending',
+  status text NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'blocked', 'cancelled')),
   diff text NOT NULL DEFAULT '',
   job_type text NOT NULL DEFAULT 'legacy',
-  source_surface text NOT NULL DEFAULT 'manual',
-  target_surface text NOT NULL DEFAULT 'manual',
+  source_surface text NOT NULL DEFAULT 'manual'
+    CHECK (source_surface IN ('vault', 'postgres', 'foundry_test', 'foundry_prod', 'asset_fs', 'rag', 'vps', 'manual')),
+  target_surface text NOT NULL DEFAULT 'manual'
+    CHECK (target_surface IN ('vault', 'postgres', 'foundry_test', 'foundry_prod', 'asset_fs', 'rag', 'vps', 'manual')),
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   result jsonb NOT NULL DEFAULT '{}'::jsonb,
   error text NOT NULL DEFAULT '',
@@ -103,8 +106,10 @@ CREATE TABLE IF NOT EXISTS tickets (
 CREATE TABLE IF NOT EXISTS sync_reviews (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   review_type text NOT NULL,
-  source_surface text NOT NULL,
-  target_surface text NOT NULL,
+  source_surface text NOT NULL
+    CHECK (source_surface IN ('vault', 'postgres', 'foundry_test', 'foundry_prod', 'asset_fs', 'rag', 'vps', 'manual')),
+  target_surface text NOT NULL
+    CHECK (target_surface IN ('vault', 'postgres', 'foundry_test', 'foundry_prod', 'asset_fs', 'rag', 'vps', 'manual')),
   target_type text NOT NULL,
   target_id text NOT NULL DEFAULT '',
   base_version text NOT NULL DEFAULT '',
@@ -148,7 +153,8 @@ CREATE TABLE IF NOT EXISTS threads (
   graph_endpoint_id text NOT NULL DEFAULT '',
   title text NOT NULL,
   status text NOT NULL,
-  priority text NOT NULL DEFAULT 'med',
+  priority text NOT NULL DEFAULT 'med'
+    CHECK (priority IN ('low', 'med', 'high', 'urgent')),
   arc text,
   theme text NOT NULL DEFAULT '',
   pressure text NOT NULL DEFAULT '',
@@ -159,9 +165,12 @@ CREATE TABLE IF NOT EXISTS threads (
   clock_max integer,
   unresolved_questions text[] NOT NULL DEFAULT '{}',
   last_touched_at timestamptz,
-  visibility text NOT NULL DEFAULT 'gm',
-  freshness_state text NOT NULL DEFAULT 'unknown',
-  review_status text NOT NULL DEFAULT 'accepted',
+  visibility text NOT NULL DEFAULT 'gm'
+    CHECK (visibility IN ('gm', 'player', 'mixed', 'unknown')),
+  freshness_state text NOT NULL DEFAULT 'unknown'
+    CHECK (freshness_state IN ('fresh', 'stale_source_changed', 'stale_db_newer', 'missing_source', 'missing_mirror', 'conflict', 'unknown')),
+  review_status text NOT NULL DEFAULT 'accepted'
+    CHECK (review_status IN ('pending', 'accepted', 'rejected', 'merged', 'deferred', 'conflict', 'stale')),
   factions text[],
   sessions integer[],
   vault_path text,
@@ -286,19 +295,26 @@ CREATE TABLE IF NOT EXISTS lore_aliases (
 
 CREATE TABLE IF NOT EXISTS lore_relationships (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_type text NOT NULL,
+  source_type text NOT NULL
+    CHECK (source_type IN ('entity', 'thread', 'session', 'scene', 'asset')),
   source_id text NOT NULL,
-  target_type text NOT NULL,
+  target_type text NOT NULL
+    CHECK (target_type IN ('entity', 'thread', 'session', 'scene', 'asset')),
   target_id text NOT NULL DEFAULT '',
   unresolved_target text NOT NULL DEFAULT '',
   relationship_type text NOT NULL,
-  direction text NOT NULL DEFAULT 'directed',
-  provenance text NOT NULL DEFAULT 'manual',
+  direction text NOT NULL DEFAULT 'directed'
+    CHECK (direction IN ('directed', 'bidirectional', 'undirected')),
+  provenance text NOT NULL DEFAULT 'manual'
+    CHECK (provenance IN ('wikilink', 'mention', 'asset_embed', 'manual', 'foundry_import', 'ai_suggestion', 'system')),
   confidence double precision,
   context text NOT NULL DEFAULT '',
-  visibility text NOT NULL DEFAULT 'gm',
-  freshness_state text NOT NULL DEFAULT 'unknown',
-  review_status text NOT NULL DEFAULT 'pending',
+  visibility text NOT NULL DEFAULT 'gm'
+    CHECK (visibility IN ('gm', 'player', 'mixed', 'unknown')),
+  freshness_state text NOT NULL DEFAULT 'unknown'
+    CHECK (freshness_state IN ('fresh', 'stale_source_changed', 'stale_db_newer', 'missing_source', 'missing_mirror', 'conflict', 'unknown')),
+  review_status text NOT NULL DEFAULT 'pending'
+    CHECK (review_status IN ('pending', 'accepted', 'rejected', 'merged', 'deferred', 'conflict', 'stale')),
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -357,7 +373,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   graph_endpoint_id TEXT NOT NULL DEFAULT '',
   number      INTEGER NOT NULL UNIQUE,
   name        TEXT NOT NULL DEFAULT '',
-  status      TEXT NOT NULL DEFAULT 'Planned' CHECK (status IN ('Planned', 'Active', 'Played')),
+  status      TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'ready', 'played', 'cancelled', 'archived')),
   date        DATE,
   notes       TEXT NOT NULL DEFAULT '',
   summary     TEXT NOT NULL DEFAULT '',
@@ -381,7 +397,7 @@ CREATE TABLE IF NOT EXISTS scenes (
   type                 TEXT NOT NULL DEFAULT '',
   status               TEXT NOT NULL DEFAULT 'Draft',
   session_id           INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
-  placement            TEXT NOT NULL DEFAULT 'backlog',
+  placement            TEXT NOT NULL DEFAULT 'backlog' CHECK (placement IN ('ordered', 'floating', 'backlog')),
   sort_order           INTEGER NOT NULL DEFAULT 0,
   description          TEXT NOT NULL DEFAULT '',
   location             TEXT[] NOT NULL DEFAULT '{}',

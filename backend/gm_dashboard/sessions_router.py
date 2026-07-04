@@ -12,10 +12,20 @@ from sqlalchemy.exc import IntegrityError
 from .db.get_db import get_db
 from .db.models import Session, Scene, SessionNote
 from .services import slugify
+from .system_enums import FRESHNESS_STATES, REVIEW_STATUSES, SESSION_STATUSES, VISIBILITIES
 
 router = APIRouter()
 
-VALID_STATUSES = {"Planned", "Active", "Played"}
+LEGACY_STATUS_ALIASES = {
+    "Planned": "planned",
+    "Active": "ready",
+    "Played": "played",
+}
+VALID_STATUSES = set(SESSION_STATUSES) | set(LEGACY_STATUS_ALIASES)
+
+
+def normalize_session_status(value: str) -> str:
+    return LEGACY_STATUS_ALIASES.get(value, value)
 
 
 class SessionCreate(BaseModel):
@@ -37,7 +47,7 @@ class SessionCreate(BaseModel):
     def validate_status(cls, v: str) -> str:
         if v not in VALID_STATUSES:
             raise ValueError(f"Invalid status: {v}")
-        return v
+        return normalize_session_status(v)
 
 
 class SessionUpdate(SessionCreate):
@@ -71,6 +81,27 @@ class SessionPatch(BaseModel):
     def validate_status(cls, v: str | None) -> str | None:
         if v is not None and v not in VALID_STATUSES:
             raise ValueError(f"Invalid status: {v}")
+        return normalize_session_status(v) if v is not None else None
+
+    @field_validator("visibility")
+    @classmethod
+    def validate_visibility(cls, v: str | None) -> str | None:
+        if v is not None and v not in VISIBILITIES:
+            raise ValueError(f"Invalid visibility: {v}")
+        return v
+
+    @field_validator("freshness_state")
+    @classmethod
+    def validate_freshness_state(cls, v: str | None) -> str | None:
+        if v is not None and v not in FRESHNESS_STATES:
+            raise ValueError(f"Invalid freshness_state: {v}")
+        return v
+
+    @field_validator("review_status")
+    @classmethod
+    def validate_review_status(cls, v: str | None) -> str | None:
+        if v is not None and v not in REVIEW_STATUSES:
+            raise ValueError(f"Invalid review_status: {v}")
         return v
 
 
@@ -82,7 +113,7 @@ class SessionStatusUpdate(BaseModel):
     def validate_status(cls, v: str) -> str:
         if v not in VALID_STATUSES:
             raise ValueError(f"Invalid status: {v}")
-        return v
+        return normalize_session_status(v)
 
 
 class SessionNotePayload(BaseModel):

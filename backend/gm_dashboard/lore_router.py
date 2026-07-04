@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .db.get_db import get_connection
+from .sync_router import SyncReviewApplyRequest, apply_sync_review
 from .system_enums import (
     ASSET_MIRROR_STATES,
     FRESHNESS_STATES,
@@ -148,6 +149,19 @@ class RelationshipReviewCreate(BaseModel):
     metadata: dict[str, Any] = {}
 
 
+class LoreImportReviewCreate(BaseModel):
+    source_surface: str = "vault"
+    target_surface: str = "postgres"
+    target_type: str = "entity"
+    target_id: str = ""
+    base_version: str = ""
+    current_version: str = ""
+    source_paths: list[str] = []
+    proposed_changes: dict[str, Any] = {}
+    conflict_flags: list[str] = []
+    metadata: dict[str, Any] = {}
+
+
 class RelationshipPatch(BaseModel):
     relationship_type: str | None = None
     direction: str | None = None
@@ -231,6 +245,18 @@ def _normalize_endpoint_id(endpoint_type: str, endpoint_id: str, field: str) -> 
             )
         return endpoint_id
     return f"{endpoint_type}:{endpoint_id}"
+
+
+def _normalize_endpoint_filter(
+    endpoint_type: str | None, endpoint_id: str | None, type_field: str, id_field: str
+) -> str | None:
+    if endpoint_type is not None:
+        _validate(endpoint_type, GRAPH_ENDPOINT_TYPES, type_field)
+    if endpoint_id is None:
+        return None
+    if endpoint_type is None:
+        return endpoint_id
+    return _normalize_endpoint_id(endpoint_type, endpoint_id, id_field)
 
 
 def _entity_row(row: dict) -> dict:
@@ -925,6 +951,8 @@ def list_relationships(
     visibility: str | None = None,
     limit: int = 100,
 ) -> list[dict]:
+    source_id = _normalize_endpoint_filter(source_type, source_id, "source_type", "source_id")
+    target_id = _normalize_endpoint_filter(target_type, target_id, "target_type", "target_id")
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -1038,6 +1066,62 @@ def create_relationship_review(payload: RelationshipReviewCreate) -> dict:
             return _json(dict(cur.fetchone()))
     finally:
         conn.close()
+
+
+@router.post("/lore/import/review", status_code=201)
+def create_lore_import_review(payload: LoreImportReviewCreate) -> dict:
+    _validate(payload.source_surface, SOURCE_SURFACES, "source_surface")
+    _validate(payload.target_surface, SOURCE_SURFACES, "target_surface")
+    if payload.target_type not in GRAPH_ENDPOINT_TYPES and payload.target_type not in {
+        "source",
+        "section",
+        "alias",
+        "relationship",
+    }:
+        raise HTTPException(status_code=422, detail="target_type must be a lore import target")
+
+    proposed_changes = {
+        **payload.proposed_changes,
+        "source_paths": payload.source_paths,
+        "metadata": payload.metadata,
+    }
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO sync_reviews (
+                  review_type, source_surface, target_surface, target_type, target_id,
+                  base_version, current_version, proposed_changes, conflict_flags,
+                  review_status
+                )
+                VALUES (
+                  'vault_import', %(source_surface)s, %(target_surface)s,
+                  %(target_type)s, %(target_id)s, %(base_version)s,
+                  %(current_version)s, %(proposed_changes)s, %(conflict_flags)s,
+                  'pending'
+                )
+                RETURNING *
+                """,
+                {
+                    "source_surface": payload.source_surface,
+                    "target_surface": payload.target_surface,
+                    "target_type": payload.target_type,
+                    "target_id": payload.target_id,
+                    "base_version": payload.base_version,
+                    "current_version": payload.current_version,
+                    "proposed_changes": psycopg2.extras.Json(proposed_changes),
+                    "conflict_flags": psycopg2.extras.Json(payload.conflict_flags),
+                },
+            )
+            return _json(dict(cur.fetchone()))
+    finally:
+        conn.close()
+
+
+@router.post("/lore/import/{review_id}/apply")
+def apply_lore_import_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
+    return apply_sync_review(review_id, payload)
 
 
 @router.patch("/relationships/{relationship_id}")

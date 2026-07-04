@@ -6,6 +6,7 @@ import KanbanBoard from "./tickets/KanbanBoard";
 import SceneDeck from "./scenes/SceneDeck";
 import SessionDeck from "./sessions/SessionDeck";
 import SessionNote from "./SessionNote";
+import ThreadDirectionDashboard from "./threads/ThreadDirectionDashboard";
 import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
 import "./styles.css";
@@ -152,6 +153,12 @@ function App() {
               onStatusChange={setStatus}
               onErrorChange={setError}
               runAction={runAction}
+            />
+          )}
+          {activeTool === "threads" && (
+            <ThreadDirectionDashboard
+              onStatusChange={setStatus}
+              onErrorChange={setError}
             />
           )}
           {activeTool === "search" && (

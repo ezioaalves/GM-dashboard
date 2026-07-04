@@ -45,7 +45,7 @@ def seed_session(number=1, name="Test Session"):
             VALUES (%s, %s, %s, %s, %s)
             RETURNING id, number, name, status, date, notes
             """,
-            (number, name, "Planned", None, ""),
+            (number, name, "planned", None, ""),
         )
         row = cur.fetchone()
     conn.close()
@@ -92,7 +92,7 @@ def test_create_session():
     data = res.json()
     assert data["number"] == 18
     assert data["name"] == "The Iron Keep"
-    assert data["status"] == "Active"
+    assert data["status"] == "ready"
     assert data["date"] == "2026-06-27"
     assert data["notes"] == "Open at the keep gates."
     assert data["scene_count"] == 0
@@ -109,7 +109,7 @@ def test_list_sessions_returns_created():
     assert len(data) == 2
     # Ordered by number DESC
     assert data[0]["number"] == 18
-    assert data[0]["status"] == "Planned"
+    assert data[0]["status"] == "planned"
     assert data[0]["date"] is None
     assert data[0]["notes"] == ""
     assert data[0]["scene_count"] == 1
@@ -140,7 +140,7 @@ def test_update_session():
     data = res.json()
     assert data["number"] == 19
     assert data["name"] == "Updated Session"
-    assert data["status"] == "Played"
+    assert data["status"] == "played"
     assert data["date"] == "2026-06-28"
     assert data["notes"] == "Wrapped the council scene."
     assert data["scene_count"] == 1
@@ -150,7 +150,7 @@ def test_update_session_not_found():
     res = client.put("/api/sessions/99999", json={
         "number": 19,
         "name": "Missing",
-        "status": "Planned",
+        "status": "planned",
         "date": None,
         "notes": "",
     })
@@ -163,7 +163,7 @@ def test_update_session_duplicate_number():
     res = client.put(f"/api/sessions/{session['id']}", json={
         "number": 18,
         "name": "Duplicate",
-        "status": "Planned",
+        "status": "planned",
         "date": None,
         "notes": "",
     })
@@ -192,11 +192,11 @@ def test_patch_session_status():
     assert res.status_code == 200
     data = res.json()
     assert data["id"] == session["id"]
-    assert data["status"] == "Active"
+    assert data["status"] == "ready"
 
     # Verify status was updated
     res = client.get("/api/sessions")
-    assert res.json()[0]["status"] == "Active"
+    assert res.json()[0]["status"] == "ready"
 
 
 def test_patch_session_status_invalid():

@@ -4,28 +4,34 @@ import path from "node:path";
 
 const app = fs.readFileSync(path.join("frontend", "src", "main.tsx"), "utf8");
 const sidebar = fs.readFileSync(path.join("frontend", "src", "components", "Sidebar.jsx"), "utf8");
-const sessionDeck = fs.readFileSync(path.join("frontend", "src", "sessions", "SessionDeck.jsx"), "utf8");
-const sessionForm = fs.readFileSync(path.join("frontend", "src", "sessions", "SessionForm.jsx"), "utf8");
-const sessionNoteEditor = fs.readFileSync(path.join("frontend", "src", "sessions", "SessionNoteEditor.jsx"), "utf8");
-const sceneForm = fs.readFileSync(path.join("frontend", "src", "scenes", "SceneForm.jsx"), "utf8");
+const sessionDeck = fs.readFileSync(path.join("frontend", "src", "sessions", "SessionDeck.tsx"), "utf8");
+const sessionForm = fs.readFileSync(path.join("frontend", "src", "sessions", "SessionForm.tsx"), "utf8");
+const sessionNoteEditor = fs.readFileSync(path.join("frontend", "src", "sessions", "SessionNoteEditor.tsx"), "utf8");
+const sceneForm = fs.readFileSync(path.join("frontend", "src", "scenes", "SceneForm.tsx"), "utf8");
+const threadDashboard = fs.readFileSync(path.join("frontend", "src", "threads", "ThreadDirectionDashboard.tsx"), "utf8");
 const kanban = fs.readFileSync(path.join("frontend", "src", "tickets", "KanbanBoard.jsx"), "utf8");
 const css = fs.readFileSync(path.join("frontend", "src", "styles.css"), "utf8");
 
-for (const action of ["Session Deck", "Scene Deck", "Search Vault", "Tickets", "Foundry Link"]) {
+for (const action of ["Session Deck", "Scene Deck", "Thread Direction", "Search Vault", "Tickets", "Foundry Link"]) {
   assert.match(sidebar, new RegExp(action));
 }
 
 assert.match(sidebar, /CalendarDays/);
+assert.match(sidebar, /GitBranch/);
 assert.doesNotMatch(sidebar, /session-note/);
 assert.match(app, /useState\("session-deck"\)/);
 assert.match(app, /SessionDeck/);
 assert.match(app, /activeTool === "session-deck"/);
+assert.match(app, /ThreadDirectionDashboard/);
+assert.match(app, /activeTool === "threads"/);
 assert.match(sessionDeck, /New Session/);
 assert.match(sessionDeck, /Browse sessions by status/);
 assert.match(sessionForm, /Save Session/);
 assert.match(sessionForm, /Planned/);
-assert.match(sessionForm, /Active/);
+assert.match(sessionForm, /Ready/);
 assert.match(sessionForm, /Played/);
+assert.match(sessionForm, /Cancelled/);
+assert.match(sessionForm, /Archived/);
 assert.match(app, /latest_session\.session/);
 assert.match(app, /data\.freshness/);
 assert.match(sessionForm, /SessionNoteEditor/);
@@ -34,6 +40,14 @@ assert.match(sessionNoteEditor, /Save Note/);
 assert.match(sessionNoteEditor, /\/api\/sessions\/\$\{sessionId\}\/note/);
 assert.match(sessionNoteEditor, /\/api\/sessions\/\$\{sessionId\}\/note\/generate/);
 assert.match(sessionNoteEditor, /Generated markdown/);
+assert.match(threadDashboard, /Thread Direction/);
+assert.match(threadDashboard, /useThreadSummaryQuery/);
+assert.match(threadDashboard, /Next Campaign Move/);
+assert.match(threadDashboard, /Save Direction/);
+assert.match(threadDashboard, /Import Legacy/);
+assert.match(threadDashboard, /linked\.entities/);
+assert.match(threadDashboard, /linked\.sessions/);
+assert.match(threadDashboard, /linked\.scenes/);
 assert.match(sceneForm, /Canonical target path/);
 assert.match(sceneForm, /Preview Save/);
 assert.match(sceneForm, /Confirm Save/);
@@ -52,6 +66,11 @@ assert.match(css, /\.session-deck-shell/);
 assert.match(css, /\.session-card-meta/);
 assert.match(css, /\.session-note-editor/);
 assert.match(css, /\.session-note-output/);
+assert.match(css, /\.thread-dashboard/);
+assert.match(css, /\.thread-summary-grid/);
+assert.match(css, /\.thread-next-move/);
+assert.match(css, /\.thread-edit-form/);
+assert.match(css, /\.thread-layout/);
 assert.doesNotMatch(css, /letter-spacing:\s*-/);
 
 console.log("frontend static cockpit checks passed");

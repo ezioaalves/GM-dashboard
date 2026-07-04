@@ -2,14 +2,14 @@ import { useState } from "react";
 import { ChevronDown, Save, Trash } from "lucide-react";
 import CustomSelect from "../components/CustomSelect";
 import { SessionNoteEditor } from "./SessionNoteEditor";
-import type { Session, SessionNote } from "../types/session";
-
-type SessionStatus = "Planned" | "Active" | "Played";
+import type { Session, SessionNote, SessionStatus } from "../types/session";
 
 const STATUS_OPTIONS: { value: SessionStatus; label: string }[] = [
-  { value: "Planned", label: "Planned" },
-  { value: "Active", label: "Active" },
-  { value: "Played", label: "Played" },
+  { value: "planned", label: "Planned" },
+  { value: "ready", label: "Ready" },
+  { value: "played", label: "Played" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "archived", label: "Archived" },
 ];
 
 interface FormSession {
@@ -24,7 +24,7 @@ interface FormSession {
 const DEFAULT_SESSION: FormSession = {
   number: "",
   name: "",
-  status: "Planned",
+  status: "planned",
   date: "",
   notes: "",
 };
@@ -79,7 +79,7 @@ export function SessionForm({ session: initialSession, onSave, onDelete, runActi
   }
 
   function set(field: keyof FormSession) {
-    return (value: string) => setSession((prev) => ({ ...prev, [field]: value }));
+    return (value: string) => setSession((prev) => ({ ...prev, [field]: value as FormSession[typeof field] }));
   }
 
   async function handleSave() {

@@ -1,8 +1,9 @@
-import { NotebookPen, LayoutGrid, Search, FileDiff, Link } from "lucide-react";
+import { CalendarDays, GitBranch, LayoutGrid, Search, FileDiff, Link } from "lucide-react";
 
 const TOOLS = [
-  { key: "session-note", label: "Session Note", icon: NotebookPen },
+  { key: "session-deck", label: "Session Deck", icon: CalendarDays },
   { key: "scene-deck", label: "Scene Deck", icon: LayoutGrid },
+  { key: "threads", label: "Thread Direction", icon: GitBranch },
   { key: "search", label: "Search Vault", icon: Search },
   { key: "tickets", label: "Tickets", icon: FileDiff },
   { key: "foundry", label: "Foundry Link", icon: Link },

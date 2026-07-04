@@ -1,12 +1,22 @@
 import { usePatchSessionStatus } from "../api/sessions";
-import type { Session } from "../types/session";
+import type { Session, SessionStatus } from "../types/session";
 
-const SESSION_STATUSES = ["Planned", "Active", "Played"] as const;
+const SESSION_STATUSES: SessionStatus[] = ["planned", "ready", "played", "cancelled", "archived"];
 
-const STATUS_COLORS: Record<string, string> = {
-  Planned: "var(--color-text-muted)",
-  Active: "var(--color-accent)",
-  Played: "var(--color-text-secondary)",
+const STATUS_LABELS: Record<SessionStatus, string> = {
+  planned: "Planned",
+  ready: "Ready",
+  played: "Played",
+  cancelled: "Cancelled",
+  archived: "Archived",
+};
+
+const STATUS_COLORS: Record<SessionStatus, string> = {
+  planned: "var(--color-text-muted)",
+  ready: "var(--color-accent)",
+  played: "var(--color-text-secondary)",
+  cancelled: "var(--color-text-muted)",
+  archived: "var(--color-text-muted)",
 };
 
 interface SessionCardProps {
@@ -23,7 +33,7 @@ export function SessionCard({ session, onClick, isSelected, sceneCount }: Sessio
 
   async function handleStatusClick(e: React.MouseEvent) {
     e.stopPropagation();
-    const currentIndex = SESSION_STATUSES.indexOf(session.status as typeof SESSION_STATUSES[number]);
+    const currentIndex = SESSION_STATUSES.indexOf(session.status);
     const nextStatus = SESSION_STATUSES[(currentIndex + 1) % SESSION_STATUSES.length];
     await patchStatus.mutateAsync({ id: session.id, status: nextStatus });
   }
@@ -38,7 +48,7 @@ export function SessionCard({ session, onClick, isSelected, sceneCount }: Sessio
           onClick={handleStatusClick}
           title="Click to advance status"
         >
-          {session.status}
+          {STATUS_LABELS[session.status]}
         </span>
       </div>
       <div className="deck-card-title">{session.name || "Untitled Session"}</div>

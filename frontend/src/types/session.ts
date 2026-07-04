@@ -1,8 +1,10 @@
+export type SessionStatus = "planned" | "ready" | "played" | "cancelled" | "archived";
+
 export interface Session {
   id: number;
   number: number;
   name: string;
-  status: "Planned" | "Active" | "Played";
+  status: SessionStatus;
   date: string | null;
   notes: string;
   scene_count: number;
@@ -11,7 +13,7 @@ export interface Session {
 export interface SessionCreate {
   number: number;
   name?: string;
-  status?: "Planned" | "Active" | "Played";
+  status?: SessionStatus;
   date?: string | null;
   notes?: string;
 }
