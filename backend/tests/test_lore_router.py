@@ -292,3 +292,49 @@ def test_list_assets_filters_by_usage_and_linked_entity():
     by_entity = client.get(f"/api/assets?linked_entity_id={entity['id']}")
     assert by_entity.status_code == 200
     assert len(by_entity.json()) == 1
+
+
+# ---- lore/import/scan --------------------------------------------------
+
+
+def test_scan_lore_vault_dry_run_reports_summary_without_writing_reviews(tmp_path, monkeypatch):
+    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations").mkdir(parents=True)
+    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations" / "Kani.md").write_text(
+        "# Kanigakure\n\n## Overview\nHome base.\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
+
+    res = client.post("/api/lore/import/scan?dry_run=true")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["scanned"] == 1
+    assert body["new"] == 1
+    assert body["review_ids"] == []
+    assert "sync_job_id" not in body
+
+    listed = client.get("/api/sync/reviews?review_type=vault_import")
+    assert listed.json() == []
+
+
+def test_scan_lore_vault_creates_job_and_reviews(tmp_path, monkeypatch):
+    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations").mkdir(parents=True)
+    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations" / "Kani.md").write_text(
+        "# Kanigakure\n\n## Overview\nHome base.\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
+
+    res = client.post("/api/lore/import/scan")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["new"] == 1
+    assert len(body["review_ids"]) == 1
+    assert body["sync_job_id"]
+
+    job = client.get(f"/api/sync/jobs/{body['sync_job_id']}")
+    assert job.status_code == 200
+    assert job.json()["status"] == "succeeded"
+    assert job.json()["job_type"] == "vault_scan"
+
+    review = client.get(f"/api/sync/reviews/{body['review_ids'][0]}")
+    assert review.status_code == 200
+    assert review.json()["review_type"] == "vault_import"

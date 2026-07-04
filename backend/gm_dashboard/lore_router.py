@@ -21,6 +21,8 @@ from .system_enums import (
     SOURCE_SURFACES,
     VISIBILITIES,
 )
+from . import services
+from .lore_scan import scan_vault
 
 router = APIRouter()
 
@@ -1122,6 +1124,49 @@ def create_lore_import_review(payload: LoreImportReviewCreate) -> dict:
 @router.post("/lore/import/{review_id}/apply")
 def apply_lore_import_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
     return apply_sync_review(review_id, payload)
+
+
+@router.post("/lore/import/scan")
+def scan_lore_vault(dry_run: bool = False) -> dict:
+    vault_root = services.find_vault_root()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if dry_run:
+                return scan_vault(vault_root, cur, dry_run=True)
+
+            cur.execute(
+                """
+                INSERT INTO sync_jobs (
+                  target, direction, status, diff, job_type,
+                  source_surface, target_surface, started_at, updated_at
+                )
+                VALUES (
+                  'lore:vault', 'vault_to_postgres', 'running', '', 'vault_scan',
+                  'vault', 'postgres', now(), now()
+                )
+                RETURNING id
+                """
+            )
+            job_id = str(cur.fetchone()["id"])
+
+            summary = scan_vault(vault_root, cur, dry_run=False)
+
+            cur.execute(
+                """
+                UPDATE sync_jobs
+                SET status = 'succeeded',
+                    result = %(result)s,
+                    result_payload = %(result)s,
+                    finished_at = now(),
+                    updated_at = now()
+                WHERE id = %(id)s
+                """,
+                {"id": job_id, "result": psycopg2.extras.Json(summary)},
+            )
+            return {**summary, "sync_job_id": job_id}
+    finally:
+        conn.close()
 
 
 @router.patch("/relationships/{relationship_id}")
