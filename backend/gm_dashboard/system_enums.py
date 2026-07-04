@@ -28,7 +28,7 @@ SOURCE_SURFACES = frozenset(
     {"vault", "postgres", "foundry_test", "foundry_prod", "asset_fs", "rag", "vps", "manual"}
 )
 
-GRAPH_ENDPOINT_TYPES = frozenset({"entity", "thread", "session", "scene", "asset"})
+GRAPH_ENDPOINT_TYPES = frozenset({"entity", "thread", "session", "scene", "asset", "clock", "pc"})
 
 RELATIONSHIP_DIRECTIONS = frozenset({"directed", "bidirectional", "undirected"})
 
@@ -54,10 +54,21 @@ LEGACY_SESSION_STATUSES = frozenset({"Planned", "Active", "Played"})
 
 SCENE_PLACEMENTS = frozenset({"ordered", "floating", "backlog"})
 
+CLOCK_KINDS = frozenset({"progress", "countdown"})
+CLOCK_LIFECYCLES = frozenset({"active", "resolved", "abandoned"})
+CLOCK_EVENTS = frozenset({"ticked", "filled", "emptied"})
+CASCADE_TRIGGER_KINDS = frozenset({"manual", "clock_event"})
+CLOCK_ORIGINS = frozenset({"manual", "thread_migration"})
+
 
 def enum_catalog() -> dict[str, list[str]]:
     return {
         "asset_mirror_states": sorted(ASSET_MIRROR_STATES),
+        "cascade_trigger_kinds": sorted(CASCADE_TRIGGER_KINDS),
+        "clock_events": sorted(CLOCK_EVENTS),
+        "clock_kinds": sorted(CLOCK_KINDS),
+        "clock_lifecycles": sorted(CLOCK_LIFECYCLES),
+        "clock_origins": sorted(CLOCK_ORIGINS),
         "freshness_states": sorted(FRESHNESS_STATES),
         "graph_endpoint_types": sorted(GRAPH_ENDPOINT_TYPES),
         "relationship_directions": sorted(RELATIONSHIP_DIRECTIONS),

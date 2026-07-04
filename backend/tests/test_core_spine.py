@@ -1221,6 +1221,14 @@ def test_system_enum_catalog_matches_spine_contract_values():
         "unknown",
     ]
     assert data["legacy_session_statuses"] == ["Active", "Planned", "Played"]
-    assert data["graph_endpoint_types"] == ["asset", "entity", "scene", "session", "thread"]
+    assert data["graph_endpoint_types"] == [
+        "asset",
+        "clock",
+        "entity",
+        "pc",
+        "scene",
+        "session",
+        "thread",
+    ]
     assert data["scene_placements"] == ["backlog", "floating", "ordered"]
     assert data["session_statuses"] == ["archived", "cancelled", "planned", "played", "ready"]

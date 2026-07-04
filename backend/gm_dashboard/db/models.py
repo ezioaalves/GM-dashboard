@@ -446,3 +446,60 @@ class PC(Base):
     foundry_last_synced_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Clock(Base):
+    __tablename__ = "clocks"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    graph_endpoint_id = Column(Text, nullable=False, unique=True, server_default="")
+    name = Column(Text, nullable=False)
+    description = Column(Text, nullable=False, server_default="")
+    kind = Column(Text, nullable=False, server_default="progress")
+    segments = Column(Integer, nullable=False)
+    filled = Column(Integer, nullable=False, server_default=text("0"))
+    segment_labels = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    lifecycle = Column(Text, nullable=False, server_default="active")
+    resolution = Column(Text, nullable=False, server_default="")
+    resolved_at = Column(DateTime(timezone=True))
+    origin = Column(Text, nullable=False, server_default="manual")
+    foundry_clock_id_test = Column(Text, nullable=False, server_default="")
+    foundry_clock_id_prod = Column(Text, nullable=False, server_default="")
+    mirror_state = Column(Text, nullable=False, server_default="not_mirrored")
+    last_mirrored_at = Column(DateTime(timezone=True))
+    visibility = Column(Text, nullable=False, server_default="gm")
+    freshness_state = Column(Text, nullable=False, server_default="unknown")
+    review_status = Column(Text, nullable=False, server_default="accepted")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ClockTick(Base):
+    __tablename__ = "clock_ticks"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    clock_id = Column(PGUUID(as_uuid=True), ForeignKey("clocks.id", ondelete="CASCADE"), nullable=False)
+    delta = Column(Integer, nullable=False)
+    filled_before = Column(Integer, nullable=False)
+    filled_after = Column(Integer, nullable=False)
+    reason = Column(Text, nullable=False)
+    caused_by = Column(Text, nullable=False, server_default="manual")
+    rule_id = Column(PGUUID(as_uuid=True), ForeignKey("cascade_rules.id", ondelete="SET NULL"))
+    trigger_fire_id = Column(PGUUID(as_uuid=True), nullable=False)
+    hop_depth = Column(Integer, nullable=False, server_default=text("0"))
+    created_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class CascadeRule(Base):
+    __tablename__ = "cascade_rules"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    name = Column(Text, nullable=False, unique=True)
+    title = Column(Text, nullable=False, server_default="")
+    description = Column(Text, nullable=False, server_default="")
+    trigger_kind = Column(Text, nullable=False, server_default="manual")
+    trigger_clock_id = Column(PGUUID(as_uuid=True), ForeignKey("clocks.id", ondelete="CASCADE"))
+    trigger_event = Column(Text)
+    condition = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    effects = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    enabled = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
