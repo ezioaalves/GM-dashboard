@@ -2,10 +2,13 @@
 
 Private GM cockpit for prep, note capture, and session recovery.
 
-Markdown remains canonical for session logs, tickets, lore, mechanics, and prep. The
-backend reads and writes vault-relative Markdown paths; Postgres is reserved for app
-internals such as users, draft workflow state, projections, sync jobs, Foundry links,
-and later sheet-like structured records.
+The current source-boundary rules live in
+`docs/superpowers/system-definition/`. Markdown remains the long-form prose and
+source-artifact layer for session logs, prep, lore files, mechanics, and
+operational tickets until reviewed import/cutover. Postgres owns reviewed
+structured dashboard state: tickets after accepted import, lore projections and
+graph records, threads, sessions, scenes, sync reviews, sync jobs, assets, and
+Foundry mirror metadata.
 
 ## Backend
 
@@ -17,7 +20,7 @@ pip install -r requirements.txt
 uvicorn gm_dashboard.api:app --app-dir backend --reload
 ```
 
-Optional local Postgres for app internals:
+Optional local Postgres for dashboard structured state:
 
 ```bash
 cd "Creation Zone/gm-dashboard"
@@ -33,9 +36,11 @@ cd "Creation Zone/gm-dashboard"
 PYTHONPATH=backend alembic -c alembic.ini upgrade head
 ```
 
-The initial schema lives at `backend/gm_dashboard/db/schema.sql`. The v1
-cockpit endpoints are still Markdown-first; database-backed auth, durable draft
-state, projections, sheet records, and sync jobs can be layered onto this schema.
+The initial schema lives at `backend/gm_dashboard/db/schema.sql`. Additive
+Alembic migrations are the supported path for the core spine and review-gated
+crossings. Do not delete Markdown ticket, lore, session-log, asset, or Foundry
+source artifacts as part of import; stage crossings through `sync_reviews` and
+record apply attempts in `sync_jobs`.
 
 Useful endpoints:
 
@@ -44,6 +49,8 @@ Useful endpoints:
 - `POST /api/capture/scene`
 - `GET /api/search?q=haiiro`
 - `GET /api/tickets`
+- `GET /api/sync/freshness`
+- `GET /api/sync/reviews`
 - `POST /api/drafts/{id}/save`
 - `GET /api/foundry/status`
 
