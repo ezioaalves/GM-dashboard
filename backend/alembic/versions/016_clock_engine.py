@@ -117,6 +117,20 @@ def upgrade():
         CREATE UNIQUE INDEX IF NOT EXISTS uq_pcs_graph_endpoint_id
           ON pcs(graph_endpoint_id);
 
+        -- Extend lore_relationships endpoint-type constraints (from 014) so
+        -- 'clock' and 'pc' endpoints are accepted, matching GRAPH_ENDPOINT_TYPES.
+        ALTER TABLE lore_relationships
+          DROP CONSTRAINT IF EXISTS lore_relationships_source_type_check,
+          DROP CONSTRAINT IF EXISTS lore_relationships_target_type_check;
+        ALTER TABLE lore_relationships
+          ADD CONSTRAINT lore_relationships_source_type_check
+          CHECK (source_type IN ('entity', 'thread', 'session', 'scene', 'asset', 'clock', 'pc'))
+          NOT VALID;
+        ALTER TABLE lore_relationships
+          ADD CONSTRAINT lore_relationships_target_type_check
+          CHECK (target_type IN ('entity', 'thread', 'session', 'scene', 'asset', 'clock', 'pc'))
+          NOT VALID;
+
         -- Thread inline clock migration: one progress clock per thread with a label.
         WITH migrated AS (
           INSERT INTO clocks (name, kind, segments, filled, origin, lifecycle)
@@ -153,10 +167,25 @@ def downgrade():
     op.execute(
         """
         DELETE FROM lore_relationships WHERE source_type = 'clock';
+        DELETE FROM lore_relationships
+          WHERE target_type IN ('clock', 'pc') OR source_type = 'pc';
         DROP TABLE IF EXISTS clock_ticks;
         DROP TABLE IF EXISTS cascade_rules;
         DROP TABLE IF EXISTS clocks;
         DROP INDEX IF EXISTS uq_pcs_graph_endpoint_id;
         ALTER TABLE pcs DROP COLUMN IF EXISTS graph_endpoint_id;
+
+        -- Restore the original (014) lore_relationships endpoint-type constraints.
+        ALTER TABLE lore_relationships
+          DROP CONSTRAINT IF EXISTS lore_relationships_source_type_check,
+          DROP CONSTRAINT IF EXISTS lore_relationships_target_type_check;
+        ALTER TABLE lore_relationships
+          ADD CONSTRAINT lore_relationships_source_type_check
+          CHECK (source_type IN ('entity', 'thread', 'session', 'scene', 'asset'))
+          NOT VALID;
+        ALTER TABLE lore_relationships
+          ADD CONSTRAINT lore_relationships_target_type_check
+          CHECK (target_type IN ('entity', 'thread', 'session', 'scene', 'asset'))
+          NOT VALID;
         """
     )

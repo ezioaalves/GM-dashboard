@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import pathlib
+import subprocess
 
 import psycopg2
 import psycopg2.extras
@@ -96,4 +98,75 @@ class TestSchema:
                 """
             )
             assert cur.fetchone() is not None
+        conn.close()
+
+
+APP_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def _alembic(*args: str) -> None:
+    subprocess.run(
+        ["alembic", *args],
+        cwd=APP_ROOT,
+        env={**os.environ, "DATABASE_URL": DATABASE_URL},
+        check=True,
+        capture_output=True,
+    )
+
+
+class TestThreadClockDataMigration:
+    def test_migration_016_migrates_thread_inline_clocks(self):
+        conn = _connect()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO threads (id, title, status, clock_label, clock_value, clock_max)
+                VALUES ('thr-mig-test', 'Migration Test Thread', 'active',
+                        'Migration Test Clock', 99, 6)
+                RETURNING graph_endpoint_id
+                """
+            )
+            thread_gid = cur.fetchone()["graph_endpoint_id"]
+        conn.close()
+
+        # Replay migration 016 against the seeded thread so the data-migration
+        # path (including INSERT INTO lore_relationships with source_type='clock')
+        # actually executes.
+        _alembic("downgrade", "-1")
+        _alembic("upgrade", "head")
+
+        conn = _connect()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT graph_endpoint_id, name, kind, segments, filled, origin, lifecycle
+                FROM clocks WHERE origin = 'thread_migration'
+                """
+            )
+            clocks = [dict(r) for r in cur.fetchall()]
+            assert len(clocks) == 1
+            clock = clocks[0]
+            assert clock["name"] == "Migration Test Clock"
+            assert clock["kind"] == "progress"
+            assert clock["segments"] == 6
+            assert clock["filled"] == 6  # clock_value 99 clamped to clock_max
+            assert clock["lifecycle"] == "active"
+
+            cur.execute(
+                """
+                SELECT source_type, source_id, target_type, target_id,
+                       relationship_type, direction, provenance, review_status
+                FROM lore_relationships WHERE source_type = 'clock'
+                """
+            )
+            rels = [dict(r) for r in cur.fetchall()]
+            assert len(rels) == 1
+            rel = rels[0]
+            assert rel["source_id"] == clock["graph_endpoint_id"]
+            assert rel["target_type"] == "thread"
+            assert rel["target_id"] == thread_gid
+            assert rel["relationship_type"] == "tracks"
+            assert rel["direction"] == "directed"
+            assert rel["provenance"] == "system"
+            assert rel["review_status"] == "accepted"
         conn.close()
