@@ -204,6 +204,7 @@ CREATE TABLE IF NOT EXISTS npcs (
   foundry_sync_locked boolean DEFAULT false,
   foundry_last_synced_at timestamptz,
   foundry_pending_import jsonb,
+  lore_entity_id uuid REFERENCES lore_entities(id) ON DELETE SET NULL,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -222,6 +223,7 @@ CREATE TABLE IF NOT EXISTS pcs (
   foundry_actor_id_test text,
   foundry_actor_id_prod text,
   foundry_pending_import jsonb,
+  lore_entity_id uuid REFERENCES lore_entities(id) ON DELETE SET NULL,
   foundry_last_synced_at timestamptz,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
