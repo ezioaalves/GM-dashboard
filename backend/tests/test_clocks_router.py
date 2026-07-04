@@ -333,3 +333,91 @@ class TestEngineDB:
         conn.close()
         assert _clock_row(cid)["filled"] == 0
         assert _ticks(cid) == []
+
+    def test_unknown_clock_id_rejected(self):
+        conn = _connect()
+        conn.autocommit = False
+        with pytest.raises(EngineError, match="clock not found"):
+            fire_manual_tick(conn, str(uuid_mod.uuid4()), 1, "why")
+        conn.close()
+
+    def test_unknown_rule_id_rejected(self):
+        conn = _connect()
+        conn.autocommit = False
+        with pytest.raises(EngineError, match="cascade rule not found"):
+            fire_rule(conn, str(uuid_mod.uuid4()))
+        conn.close()
+
+    def test_disabled_rule_refused(self):
+        cid = _insert_clock()["id"]
+        rid = _insert_rule(
+            effects=[{"clock_id": str(cid), "delta": 1, "reason_template": "x"}],
+            enabled=False,
+        )
+        conn = _connect()
+        conn.autocommit = False
+        with pytest.raises(EngineError, match="disabled"):
+            fire_rule(conn, rid)
+        conn.close()
+        assert _ticks(cid) == []
+
+    def test_zero_delta_rejected(self):
+        cid = _insert_clock()["id"]
+        conn = _connect()
+        conn.autocommit = False
+        with pytest.raises(EngineError, match="non-zero"):
+            fire_manual_tick(conn, str(cid), 0, "why")
+        conn.close()
+        assert _ticks(cid) == []
+
+    def test_rule_condition_evaluated_under_fire_transaction(self, monkeypatch):
+        # Condition gated on a clock's fill level; assert the gate both refuses
+        # and fires through fire_rule, and that evaluation happens against the
+        # exact state object _load_state returned inside _run_fire's transaction.
+        gate = _insert_clock(name="Gate", segments=6, filled=1)["id"]
+        target = _insert_clock(name="Target", segments=6)["id"]
+        rid = _insert_rule(
+            effects=[{"clock_id": str(target), "delta": 1, "reason_template": "gated"}],
+            condition={"clock": str(gate), "op": "gte", "value": 2},
+        )
+
+        import gm_dashboard.clock_engine as ce
+
+        seen = {}
+        real_load = ce._load_state
+        real_eval = ce.evaluate_condition
+
+        def spy_load(cur):
+            state = real_load(cur)
+            seen["loaded"] = state
+            return state
+
+        def spy_eval(condition, clocks):
+            if condition:  # the rule's gate condition, not an empty default
+                seen.setdefault("evaluated_with", clocks)
+            return real_eval(condition, clocks)
+
+        monkeypatch.setattr(ce, "_load_state", spy_load)
+        monkeypatch.setattr(ce, "evaluate_condition", spy_eval)
+
+        conn = _connect()
+        conn.autocommit = False
+        with pytest.raises(EngineError, match="condition is not met"):
+            fire_rule(conn, rid)
+        conn.close()
+        assert seen["evaluated_with"] is seen["loaded"]
+        assert _ticks(target) == []
+
+        # Raise the gate; the same rule now fires.
+        conn = _connect()
+        with conn.cursor() as cur:
+            cur.execute("UPDATE clocks SET filled = 2 WHERE id = %s", (gate,))
+        conn.close()
+        seen.clear()
+        conn = _connect()
+        conn.autocommit = False
+        result = fire_rule(conn, rid)
+        conn.close()
+        assert len(result["applied"]) == 1
+        assert seen["evaluated_with"] is seen["loaded"]
+        assert _clock_row(target)["filled"] == 1

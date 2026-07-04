@@ -331,11 +331,14 @@ def _result_payload(fire_id: str, result: FireResult, dry_run: bool) -> dict:
     }
 
 
-def _run_fire(conn, initial_effects: list[Effect], dry_run: bool) -> dict:
+def _run_fire(conn, initial_effects: list[Effect], dry_run: bool,
+              condition: dict | None = None) -> dict:
     fire_id = str(uuid.uuid4())
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             clocks = _load_state(cur)
+            if condition is not None and not evaluate_condition(condition, clocks):
+                raise EngineError("rule condition is not met")
             rules = _load_rules(cur)
             result = project_fire(initial_effects, clocks, rules)
             if dry_run:
@@ -355,6 +358,10 @@ def fire_manual_tick(conn, clock_id: str, delta: int, reason: str, dry_run: bool
         raise EngineError("reason is required")
     if delta == 0:
         raise EngineError("delta must be non-zero")
+    # Pre-check for a friendly EngineError; safe against races because
+    # _apply_effect re-validates existence + lifecycle against the
+    # FOR UPDATE-locked state inside _run_fire (worst case: skipped, never
+    # a wrong write).
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("SELECT lifecycle FROM clocks WHERE id = %s", (clock_id,))
         row = cur.fetchone()
@@ -377,11 +384,6 @@ def fire_rule(conn, rule_id: str, trigger_note: str = "", dry_run: bool = False)
         raise EngineError("cascade rule is disabled")
     if row["trigger_kind"] != "manual":
         raise EngineError("only manual rules can be fired directly")
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        clocks = _load_state(cur)
-        conn.rollback()  # peek only; _run_fire re-locks
-    if not evaluate_condition(row["condition"] or {}, clocks):
-        raise EngineError("rule condition is not met")
     initial = [
         Effect(
             clock_id=str(e["clock_id"]), delta=int(e["delta"]),
@@ -393,4 +395,6 @@ def fire_rule(conn, rule_id: str, trigger_note: str = "", dry_run: bool = False)
     ]
     if not initial:
         raise EngineError("rule has no effects")
-    return _run_fire(conn, initial, dry_run)
+    # Condition is evaluated inside _run_fire against the same FOR UPDATE-locked
+    # state the fire uses — one transaction, no peek-and-release TOCTOU window.
+    return _run_fire(conn, initial, dry_run, condition=row["condition"] or {})
