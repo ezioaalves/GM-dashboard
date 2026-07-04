@@ -170,3 +170,166 @@ class TestThreadClockDataMigration:
             assert rel["provenance"] == "system"
             assert rel["review_status"] == "accepted"
         conn.close()
+
+
+import uuid as uuid_mod
+
+from gm_dashboard.clock_engine import EngineError, fire_manual_tick, fire_rule
+
+
+def _insert_rule(effects, name=None, trigger_kind="manual", trigger_clock_id=None,
+                 trigger_event=None, condition=None, enabled=True, title="Rule"):
+    conn = _connect()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            INSERT INTO cascade_rules
+              (name, title, trigger_kind, trigger_clock_id, trigger_event,
+               condition, effects, enabled)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                name or f"rule-{uuid_mod.uuid4().hex[:8]}", title, trigger_kind,
+                trigger_clock_id, trigger_event,
+                psycopg2.extras.Json(condition or {}),
+                psycopg2.extras.Json(effects), enabled,
+            ),
+        )
+        rid = str(cur.fetchone()["id"])
+    conn.close()
+    return rid
+
+
+def _clock_row(clock_id):
+    conn = _connect()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM clocks WHERE id = %s", (clock_id,))
+        row = dict(cur.fetchone())
+    conn.close()
+    return row
+
+
+def _ticks(clock_id):
+    conn = _connect()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT * FROM clock_ticks WHERE clock_id = %s ORDER BY created_at", (clock_id,)
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+class TestEngineDB:
+    def test_manual_tick_writes_ledger_and_state(self):
+        cid = _insert_clock()["id"]
+        conn = _connect()
+        conn.autocommit = False
+        result = fire_manual_tick(conn, str(cid), 2, "Lead found")
+        conn.close()
+        assert _clock_row(cid)["filled"] == 2
+        ticks = _ticks(cid)
+        assert len(ticks) == 1
+        assert ticks[0]["reason"] == "Lead found"
+        assert ticks[0]["caused_by"] == "manual"
+        assert result["applied"][0]["filled_after"] == 2
+
+    def test_empty_reason_rejected(self):
+        cid = _insert_clock()["id"]
+        conn = _connect()
+        conn.autocommit = False
+        with pytest.raises(EngineError):
+            fire_manual_tick(conn, str(cid), 1, "   ")
+        conn.close()
+
+    def test_tick_on_resolved_clock_rejected(self):
+        cid = _insert_clock(lifecycle="resolved")["id"]
+        conn = _connect()
+        conn.autocommit = False
+        with pytest.raises(EngineError):
+            fire_manual_tick(conn, str(cid), 1, "why")
+        conn.close()
+
+    def test_dry_run_writes_nothing(self):
+        cid = _insert_clock()["id"]
+        conn = _connect()
+        conn.autocommit = False
+        result = fire_manual_tick(conn, str(cid), 1, "preview", dry_run=True)
+        conn.close()
+        assert result["dry_run"] is True
+        assert result["applied"][0]["filled_after"] == 1
+        assert _clock_row(cid)["filled"] == 0
+        assert _ticks(cid) == []
+
+    def test_fire_manual_rule_moves_two_clocks_one_audit_each(self):
+        corruption = _insert_clock(name="Corruption", segments=8)["id"]
+        trade = _insert_clock(name="Trade Safety", segments=8, filled=4)["id"]
+        rid = _insert_rule(
+            effects=[
+                {"clock_id": str(corruption), "delta": 1,
+                 "reason_template": "Failed patrol ({trigger_note})"},
+                {"clock_id": str(trade), "delta": -1,
+                 "reason_template": "Failed patrol ({trigger_note})"},
+            ],
+            title="Failed Patrol",
+        )
+        conn = _connect()
+        conn.autocommit = False
+        result = fire_rule(conn, rid, trigger_note="session 12")
+        conn.close()
+        assert len(result["applied"]) == 2
+        fire_ids = {t["trigger_fire_id"] for t in _ticks(corruption) + _ticks(trade)}
+        assert len(fire_ids) == 1
+        assert _ticks(corruption)[0]["reason"] == "Failed patrol (session 12)"
+        assert _clock_row(trade)["filled"] == 3
+
+    def test_clock_event_rule_not_directly_fireable(self):
+        cid = _insert_clock()["id"]
+        rid = _insert_rule(
+            effects=[{"clock_id": str(cid), "delta": 1, "reason_template": "x"}],
+            trigger_kind="clock_event", trigger_clock_id=str(cid), trigger_event="filled",
+        )
+        conn = _connect()
+        conn.autocommit = False
+        with pytest.raises(EngineError):
+            fire_rule(conn, rid)
+        conn.close()
+
+    def test_chained_event_rule_fires_from_manual_tick(self):
+        discovery = _insert_clock(name="Discovery", segments=2, filled=1)["id"]
+        thread_clock = _insert_clock(name="Thread pressure", segments=6)["id"]
+        _insert_rule(
+            effects=[{"clock_id": str(thread_clock), "delta": 1,
+                      "reason_template": "Discovery filled"}],
+            trigger_kind="clock_event", trigger_clock_id=str(discovery),
+            trigger_event="filled",
+        )
+        conn = _connect()
+        conn.autocommit = False
+        result = fire_manual_tick(conn, str(discovery), 1, "Strong lead")
+        conn.close()
+        assert len(result["applied"]) == 2
+        assert _clock_row(thread_clock)["filled"] == 1
+        chained = _ticks(thread_clock)[0]
+        assert chained["hop_depth"] == 1
+        assert chained["caused_by"] == "rule"
+
+    def test_atomic_rollback_on_midcascade_error(self, monkeypatch):
+        cid = _insert_clock()["id"]
+        conn = _connect()
+        conn.autocommit = False
+        import gm_dashboard.clock_engine as ce
+
+        real = ce._write_fire_result
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("mid-write failure")
+
+        monkeypatch.setattr(ce, "_write_fire_result", boom)
+        with pytest.raises(RuntimeError):
+            fire_manual_tick(conn, str(cid), 1, "will roll back")
+        monkeypatch.setattr(ce, "_write_fire_result", real)
+        conn.close()
+        assert _clock_row(cid)["filled"] == 0
+        assert _ticks(cid) == []

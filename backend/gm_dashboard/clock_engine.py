@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import copy
 import math
+import uuid
 from dataclasses import dataclass, field
+
+import psycopg2.extras
 
 
 MAX_DEPTH = 5
@@ -243,3 +246,151 @@ def project_fire(
                     ))
     result.final_state = state
     return result
+
+
+class EngineError(ValueError):
+    """Domain error: bad tick/fire request. Routers map to HTTP 409/422."""
+
+
+def _load_state(cur) -> dict[str, ClockState]:
+    cur.execute("SELECT id, kind, segments, filled, lifecycle FROM clocks FOR UPDATE")
+    return {
+        str(row["id"]): ClockState(
+            id=str(row["id"]), kind=row["kind"], segments=row["segments"],
+            filled=row["filled"], lifecycle=row["lifecycle"],
+        )
+        for row in cur.fetchall()
+    }
+
+
+def _load_rules(cur) -> list[RuleDef]:
+    cur.execute(
+        """
+        SELECT id, title, trigger_kind, trigger_clock_id, trigger_event,
+               condition, effects, enabled
+        FROM cascade_rules WHERE enabled = true
+        """
+    )
+    return [
+        RuleDef(
+            id=str(row["id"]), title=row["title"] or "",
+            trigger_kind=row["trigger_kind"],
+            trigger_clock_id=str(row["trigger_clock_id"]) if row["trigger_clock_id"] else None,
+            trigger_event=row["trigger_event"],
+            condition=row["condition"] or {}, effects=row["effects"] or [],
+            enabled=row["enabled"],
+        )
+        for row in cur.fetchall()
+    ]
+
+
+def _write_fire_result(cur, fire_id: str, result: FireResult) -> None:
+    for tick in result.applied:
+        cur.execute(
+            """
+            INSERT INTO clock_ticks
+              (clock_id, delta, filled_before, filled_after, reason,
+               caused_by, rule_id, trigger_fire_id, hop_depth)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                tick.clock_id, tick.delta, tick.filled_before, tick.filled_after,
+                tick.reason, tick.caused_by, tick.rule_id, fire_id, tick.hop_depth,
+            ),
+        )
+        cur.execute(
+            "UPDATE clocks SET filled = %s, updated_at = now() WHERE id = %s",
+            (tick.filled_after, tick.clock_id),
+        )
+
+
+def _result_payload(fire_id: str, result: FireResult, dry_run: bool) -> dict:
+    return {
+        "trigger_fire_id": fire_id,
+        "dry_run": dry_run,
+        "applied": [
+            {
+                "clock_id": t.clock_id, "delta": t.delta,
+                "filled_before": t.filled_before, "filled_after": t.filled_after,
+                "reason": t.reason, "caused_by": t.caused_by, "rule_id": t.rule_id,
+                "hop_depth": t.hop_depth, "events": t.events,
+                "trigger_fire_id": fire_id,
+            }
+            for t in result.applied
+        ],
+        "skipped": [
+            {"clock_id": s.clock_id, "delta": s.delta, "rule_id": s.rule_id,
+             "hop_depth": s.hop_depth, "why": s.why}
+            for s in result.skipped
+        ],
+        "guard_trips": result.guard_trips,
+        "clocks": {
+            cid: {"filled": c.filled, "segments": c.segments}
+            for cid, c in result.final_state.items()
+        },
+    }
+
+
+def _run_fire(conn, initial_effects: list[Effect], dry_run: bool) -> dict:
+    fire_id = str(uuid.uuid4())
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            clocks = _load_state(cur)
+            rules = _load_rules(cur)
+            result = project_fire(initial_effects, clocks, rules)
+            if dry_run:
+                conn.rollback()  # release FOR UPDATE locks
+                return _result_payload(fire_id, result, True)
+            _write_fire_result(cur, fire_id, result)
+        conn.commit()
+        return _result_payload(fire_id, result, False)
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def fire_manual_tick(conn, clock_id: str, delta: int, reason: str, dry_run: bool = False,
+                     caused_by: str = "manual") -> dict:
+    if not reason or not reason.strip():
+        raise EngineError("reason is required")
+    if delta == 0:
+        raise EngineError("delta must be non-zero")
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT lifecycle FROM clocks WHERE id = %s", (clock_id,))
+        row = cur.fetchone()
+    if row is None:
+        raise EngineError("clock not found")
+    if row["lifecycle"] != "active":
+        raise EngineError(f"clock is not active (lifecycle={row['lifecycle']})")
+    effect = Effect(clock_id=clock_id, delta=delta, reason=reason.strip(),
+                    rule_id=None, hop_depth=0, caused_by=caused_by)
+    return _run_fire(conn, [effect], dry_run)
+
+
+def fire_rule(conn, rule_id: str, trigger_note: str = "", dry_run: bool = False) -> dict:
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM cascade_rules WHERE id = %s", (rule_id,))
+        row = cur.fetchone()
+    if row is None:
+        raise EngineError("cascade rule not found")
+    if not row["enabled"]:
+        raise EngineError("cascade rule is disabled")
+    if row["trigger_kind"] != "manual":
+        raise EngineError("only manual rules can be fired directly")
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        clocks = _load_state(cur)
+        conn.rollback()  # peek only; _run_fire re-locks
+    if not evaluate_condition(row["condition"] or {}, clocks):
+        raise EngineError("rule condition is not met")
+    initial = [
+        Effect(
+            clock_id=str(e["clock_id"]), delta=int(e["delta"]),
+            reason=render_reason(e.get("reason_template", ""), row["title"] or row["name"],
+                                 trigger_note),
+            rule_id=str(row["id"]), hop_depth=0,
+        )
+        for e in (row["effects"] or [])
+    ]
+    if not initial:
+        raise EngineError("rule has no effects")
+    return _run_fire(conn, initial, dry_run)
