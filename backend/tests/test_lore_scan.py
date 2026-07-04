@@ -88,3 +88,74 @@ def test_is_scannable_excludes_drafts_and_templates():
     assert is_scannable(Path("/vault/Lore/NPCs/Scar/Sheet.md"), vault_root) is True
     assert is_scannable(Path("/vault/Lore/NPCs/_drafts/Draft.md"), vault_root) is False
     assert is_scannable(Path("/vault/Lore/NPCs/_NPC_Template.md"), vault_root) is False
+
+
+from gm_dashboard.lore_scan import build_relationships, diff_sections, parse_source_file
+
+
+def test_parse_source_file_combines_title_slug_type_sections_and_links():
+    text = "# Kanigakure\n\n## Overview\nHome of the Wakizashi. [[Scar]]\n"
+    parsed = parse_source_file("Lore/World_of_Rokugan/Kanigakure/Overview.md", text)
+    assert parsed["title"] == "Kanigakure"
+    assert parsed["slug"] == "kanigakure"
+    assert parsed["entity_type"] == "location"
+    assert [s["heading"] for s in parsed["sections"]] == ["Overview"]
+    assert parsed["links"] == [{"target": "Scar", "is_embed": False}]
+
+
+def test_build_relationships_resolves_known_targets_and_flags_unknown():
+    def resolve(target):
+        if target == "Scar":
+            return {"graph_endpoint_id": "entity:11111111-1111-1111-1111-111111111111"}
+        return None
+
+    links = [
+        {"target": "Scar", "is_embed": False},
+        {"target": "Nobody", "is_embed": False},
+        {"target": "village_map.png", "is_embed": True},
+    ]
+    relationships = build_relationships(links, resolve)
+
+    assert relationships[0] == {
+        "source_type": "entity",
+        "target_type": "entity",
+        "relationship_type": "mentions",
+        "provenance": "wikilink",
+        "target_id": "entity:11111111-1111-1111-1111-111111111111",
+    }
+    assert relationships[1] == {
+        "source_type": "entity",
+        "target_type": "entity",
+        "relationship_type": "mentions",
+        "provenance": "wikilink",
+        "unresolved_target": "Nobody",
+    }
+    assert relationships[2] == {
+        "source_type": "entity",
+        "target_type": "asset",
+        "relationship_type": "embeds",
+        "provenance": "asset_embed",
+        "unresolved_target": "village_map.png",
+    }
+
+
+def test_diff_sections_reports_added_removed_and_modified():
+    existing = [
+        {"heading": "Overview", "body": "old body", "heading_path": ["Overview"]},
+        {"heading": "Gone", "body": "bye", "heading_path": ["Gone"]},
+    ]
+    parsed = [
+        {"heading": "Overview", "body": "new body", "heading_path": ["Overview"], "section_order": 0},
+        {"heading": "New", "body": "hi", "heading_path": ["New"], "section_order": 1},
+    ]
+    result = diff_sections(existing, parsed)
+    assert result["removed"] == ["Gone"]
+    assert [s["heading"] for s in result["added"]] == ["New"]
+    assert [s["heading"] for s in result["modified"]] == ["Overview"]
+
+
+def test_diff_sections_reports_nothing_when_unchanged():
+    existing = [{"heading": "Overview", "body": "same", "heading_path": ["Overview"]}]
+    parsed = [{"heading": "Overview", "body": "same", "heading_path": ["Overview"], "section_order": 0}]
+    result = diff_sections(existing, parsed)
+    assert result == {"added": [], "removed": [], "modified": []}

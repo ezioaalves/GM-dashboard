@@ -108,3 +108,68 @@ def is_scannable(path: Path, vault_root: Path) -> bool:
 
 def looks_like_asset(target: str) -> bool:
     return Path(target).suffix.lower() in ASSET_EXTENSIONS
+
+
+def parse_source_file(rel_path: str, text: str) -> dict:
+    title = parse_title(text, Path(rel_path))
+    return {
+        "title": title,
+        "slug": slugify(title),
+        "entity_type": classify_entity_type(rel_path),
+        "sections": parse_sections(text),
+        "links": extract_wikilinks(text),
+    }
+
+
+def build_relationships(links: list[dict], resolve) -> list[dict]:
+    relationships: list[dict] = []
+    for link in links:
+        target = link["target"]
+        if link["is_embed"] and looks_like_asset(target):
+            relationships.append(
+                {
+                    "source_type": "entity",
+                    "target_type": "asset",
+                    "relationship_type": "embeds",
+                    "provenance": "asset_embed",
+                    "unresolved_target": target,
+                }
+            )
+            continue
+
+        resolved = resolve(target)
+        if resolved:
+            relationships.append(
+                {
+                    "source_type": "entity",
+                    "target_type": "entity",
+                    "relationship_type": "mentions",
+                    "provenance": "wikilink",
+                    "target_id": resolved["graph_endpoint_id"],
+                }
+            )
+        else:
+            relationships.append(
+                {
+                    "source_type": "entity",
+                    "target_type": "entity",
+                    "relationship_type": "mentions",
+                    "provenance": "wikilink",
+                    "unresolved_target": target,
+                }
+            )
+    return relationships
+
+
+def diff_sections(existing: list[dict], parsed: list[dict]) -> dict:
+    existing_by_path = {tuple(s["heading_path"]): s for s in existing}
+    parsed_by_path = {tuple(s["heading_path"]): s for s in parsed}
+
+    added = [s for path, s in parsed_by_path.items() if path not in existing_by_path]
+    removed = [s["heading"] for path, s in existing_by_path.items() if path not in parsed_by_path]
+    modified = [
+        parsed_by_path[path]
+        for path in existing_by_path.keys() & parsed_by_path.keys()
+        if existing_by_path[path]["body"] != parsed_by_path[path]["body"]
+    ]
+    return {"added": added, "removed": removed, "modified": modified}
