@@ -4,6 +4,8 @@ import hashlib
 import re
 from pathlib import Path
 
+import psycopg2.extras
+
 TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 WIKILINK_RE = re.compile(r"(!?)\[\[([^\[\]]+?)\]\]")
@@ -173,3 +175,136 @@ def diff_sections(existing: list[dict], parsed: list[dict]) -> dict:
         if existing_by_path[path]["body"] != parsed_by_path[path]["body"]
     ]
     return {"added": added, "removed": removed, "modified": modified}
+
+
+def _resolve_entity(cur, target: str) -> dict | None:
+    cur.execute(
+        """
+        SELECT id, graph_endpoint_id FROM lore_entities
+        WHERE lower(slug) = lower(%(t)s) OR lower(title) = lower(%(t)s)
+        UNION
+        SELECT e.id, e.graph_endpoint_id FROM lore_entities e
+        JOIN lore_aliases a ON a.entity_id = e.id
+        WHERE lower(a.alias) = lower(%(t)s)
+        LIMIT 1
+        """,
+        {"t": target},
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
+    lore_dir = vault_root / "Lore"
+    scanned = 0
+    new = 0
+    changed = 0
+    unchanged = 0
+    review_ids: list[str] = []
+
+    if not lore_dir.exists():
+        return {"scanned": 0, "new": 0, "changed": 0, "unchanged": 0, "review_ids": []}
+
+    for path in sorted(lore_dir.rglob("*.md")):
+        if not is_scannable(path, vault_root):
+            continue
+        scanned += 1
+        rel_path = str(path.relative_to(vault_root))
+        text = path.read_text(encoding="utf-8")
+        source_hash = compute_source_hash(text)
+
+        cur.execute(
+            "SELECT id, source_hash FROM lore_sources WHERE source_surface = 'vault' AND source_path = %s",
+            (rel_path,),
+        )
+        existing_source = cur.fetchone()
+
+        if existing_source and existing_source["source_hash"] == source_hash:
+            unchanged += 1
+            continue
+
+        parsed = parse_source_file(rel_path, text)
+
+        cur.execute(
+            "SELECT id, graph_endpoint_id FROM lore_entities WHERE slug = %s",
+            (parsed["slug"],),
+        )
+        existing_entity = cur.fetchone()
+
+        existing_sections: list[dict] = []
+        if existing_entity:
+            cur.execute(
+                "SELECT heading, body, heading_path FROM lore_sections WHERE entity_id = %s",
+                (existing_entity["id"],),
+            )
+            existing_sections = [dict(row) for row in cur.fetchall()]
+
+        relationships = build_relationships(
+            parsed["links"], lambda target: _resolve_entity(cur, target)
+        )
+
+        diff_kind = "changed" if existing_source else "new"
+        if diff_kind == "new":
+            new += 1
+        else:
+            changed += 1
+
+        proposed_changes = {
+            "diff_kind": diff_kind,
+            "entity": {
+                "slug": parsed["slug"],
+                "title": parsed["title"],
+                "entity_type": parsed["entity_type"],
+            },
+            "sections": parsed["sections"],
+            "relationships": relationships,
+        }
+        if diff_kind == "changed":
+            proposed_changes["section_diff"] = diff_sections(existing_sections, parsed["sections"])
+
+        if dry_run:
+            continue
+
+        cur.execute(
+            """
+            SELECT id FROM sync_reviews
+            WHERE review_type = 'vault_import'
+              AND review_status = 'pending'
+              AND proposed_changes -> 'source_paths' = %(paths)s::jsonb
+            """,
+            {"paths": psycopg2.extras.Json([rel_path])},
+        )
+        if cur.fetchone():
+            continue
+
+        target_id = existing_entity["graph_endpoint_id"] if existing_entity else ""
+        cur.execute(
+            """
+            INSERT INTO sync_reviews (
+              review_type, source_surface, target_surface, target_type, target_id,
+              base_version, current_version, proposed_changes, review_status
+            )
+            VALUES (
+              'vault_import', 'vault', 'postgres', 'entity', %(target_id)s,
+              %(base_version)s, %(current_version)s, %(proposed_changes)s, 'pending'
+            )
+            RETURNING id
+            """,
+            {
+                "target_id": target_id,
+                "base_version": existing_source["source_hash"] if existing_source else "",
+                "current_version": source_hash,
+                "proposed_changes": psycopg2.extras.Json(
+                    {**proposed_changes, "source_paths": [rel_path], "metadata": {}}
+                ),
+            },
+        )
+        review_ids.append(str(cur.fetchone()["id"]))
+
+    return {
+        "scanned": scanned,
+        "new": new,
+        "changed": changed,
+        "unchanged": unchanged,
+        "review_ids": review_ids,
+    }

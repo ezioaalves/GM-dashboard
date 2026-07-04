@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import psycopg2
+import psycopg2.extras
+import pytest
 
 from gm_dashboard.lore_scan import (
     classify_entity_type,
@@ -11,6 +16,37 @@ from gm_dashboard.lore_scan import (
     parse_title,
     slugify,
 )
+
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://kaihou_gm:kaihou_gm_dev@127.0.0.1:54329/kaihou_gm",
+)
+
+
+def _connect():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    return conn
+
+
+def _clean() -> None:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM lore_relationships")
+        cur.execute("DELETE FROM lore_aliases")
+        cur.execute("DELETE FROM lore_sections")
+        cur.execute("DELETE FROM lore_entities")
+        cur.execute("DELETE FROM lore_sources")
+        cur.execute("DELETE FROM sync_reviews")
+        cur.execute("DELETE FROM sync_jobs")
+    conn.close()
+
+
+@pytest.fixture(autouse=True)
+def clean_lore_tables():
+    _clean()
+    yield
+    _clean()
 
 
 def test_compute_source_hash_is_stable_sha256():
@@ -159,3 +195,183 @@ def test_diff_sections_reports_nothing_when_unchanged():
     parsed = [{"heading": "Overview", "body": "same", "heading_path": ["Overview"], "section_order": 0}]
     result = diff_sections(existing, parsed)
     assert result == {"added": [], "removed": [], "modified": []}
+
+
+from gm_dashboard.lore_scan import scan_vault
+
+
+def _write(tmp_path, rel_path, text):
+    full = tmp_path / rel_path
+    full.parent.mkdir(parents=True, exist_ok=True)
+    full.write_text(text, encoding="utf-8")
+    return full
+
+
+def test_scan_vault_creates_one_pending_review_per_new_file(tmp_path):
+    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nHome base.\n")
+    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Scar.md", "# Scar\n\n## Overview\nA deserter.\n")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_vault(tmp_path, cur)
+    finally:
+        conn.close()
+
+    assert summary["scanned"] == 2
+    assert summary["new"] == 2
+    assert summary["changed"] == 0
+    assert summary["unchanged"] == 0
+    assert len(summary["review_ids"]) == 2
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT review_type, target_type, review_status, proposed_changes FROM sync_reviews ORDER BY created_at")
+            rows = [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    assert len(rows) == 2
+    assert all(row["review_type"] == "vault_import" for row in rows)
+    assert all(row["target_type"] == "entity" for row in rows)
+    assert all(row["review_status"] == "pending" for row in rows)
+    slugs = {row["proposed_changes"]["entity"]["slug"] for row in rows}
+    assert slugs == {"kanigakure", "scar"}
+
+
+def test_scan_vault_skips_drafts_and_templates(tmp_path):
+    _write(tmp_path, "Lore/NPCs/_NPC_Template.md", "# Template\n")
+    _write(tmp_path, "Lore/NPCs/_drafts/Draft.md", "# Draft\n")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_vault(tmp_path, cur)
+    finally:
+        conn.close()
+
+    assert summary["scanned"] == 0
+    assert summary["review_ids"] == []
+
+
+def test_scan_vault_dry_run_creates_no_reviews(tmp_path):
+    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nHome base.\n")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_vault(tmp_path, cur, dry_run=True)
+            cur.execute("SELECT count(*) AS n FROM sync_reviews")
+            count = cur.fetchone()["n"]
+    finally:
+        conn.close()
+
+    assert summary["new"] == 1
+    assert summary["review_ids"] == []
+    assert count == 0
+
+
+def test_scan_vault_is_idempotent_for_unchanged_and_pending_sources(tmp_path):
+    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nHome base.\n")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            first = scan_vault(tmp_path, cur)
+            second = scan_vault(tmp_path, cur)
+            cur.execute("SELECT count(*) AS n FROM sync_reviews")
+            count = cur.fetchone()["n"]
+    finally:
+        conn.close()
+
+    assert first["new"] == 1
+    assert len(first["review_ids"]) == 1
+    assert second["new"] == 1
+    assert second["review_ids"] == []
+    assert count == 1
+
+
+def test_scan_vault_reports_changed_and_diffs_sections_against_committed_entity(tmp_path):
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO lore_entities (slug, title, entity_type, source_path, source_hash)
+                VALUES ('kanigakure', 'Kanigakure', 'location',
+                        'Lore/World_of_Rokugan/Locations/Kani.md', 'old-hash')
+                RETURNING id
+                """
+            )
+            entity_id = cur.fetchone()["id"]
+            cur.execute(
+                """
+                INSERT INTO lore_sources (source_surface, source_path, source_hash)
+                VALUES ('vault', 'Lore/World_of_Rokugan/Locations/Kani.md', 'old-hash')
+                RETURNING id
+                """
+            )
+            source_id = cur.fetchone()["id"]
+            cur.execute(
+                """
+                INSERT INTO lore_sections (source_id, entity_id, heading, body, section_order, heading_path)
+                VALUES (%s, %s, 'Overview', 'Old home base.', 0, %s)
+                """,
+                (source_id, entity_id, ["Overview"]),
+            )
+    finally:
+        conn.close()
+
+    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nNew home base.\n")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_vault(tmp_path, cur)
+            cur.execute("SELECT target_id, proposed_changes FROM sync_reviews")
+            review = dict(cur.fetchone())
+    finally:
+        conn.close()
+
+    assert summary["changed"] == 1
+    assert summary["new"] == 0
+    assert review["target_id"] == f"entity:{entity_id}"
+    assert review["proposed_changes"]["diff_kind"] == "changed"
+    modified_headings = [s["heading"] for s in review["proposed_changes"]["section_diff"]["modified"]]
+    assert modified_headings == ["Overview"]
+
+
+def test_scan_vault_resolves_wikilink_to_already_committed_entity(tmp_path):
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO lore_entities (slug, title, entity_type, source_path, source_hash)
+                VALUES ('scar', 'Scar', 'npc', 'Lore/NPCs/Scar.md', 'hash-scar')
+                RETURNING id, graph_endpoint_id
+                """
+            )
+            scar = dict(cur.fetchone())
+    finally:
+        conn.close()
+
+    _write(
+        tmp_path,
+        "Lore/World_of_Rokugan/Locations/Kani.md",
+        "# Kanigakure\n\n## Overview\nHome of [[Scar]].\n",
+    )
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            scan_vault(tmp_path, cur)
+            cur.execute("SELECT proposed_changes FROM sync_reviews")
+            review = cur.fetchone()["proposed_changes"]
+    finally:
+        conn.close()
+
+    relationships = review["relationships"]
+    assert len(relationships) == 1
+    assert relationships[0]["target_id"] == scar["graph_endpoint_id"]
