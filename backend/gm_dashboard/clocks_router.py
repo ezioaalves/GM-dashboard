@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import psycopg2.extras
@@ -22,6 +22,8 @@ from .system_enums import (
     CLOCK_LIFECYCLES,
     GRAPH_ENDPOINT_TYPES,
 )
+from . import clockworks_mirror
+from .relay_client import RelayError
 
 router = APIRouter()
 
@@ -93,6 +95,17 @@ class TickRequest(BaseModel):
         if v == 0:
             raise ValueError("delta must be non-zero")
         return v
+
+
+class MirrorRequest(BaseModel):
+    env: Literal["test", "prod"] = "test"
+    action: Literal["establish", "unmirror"] = "establish"
+
+
+class AdoptDriftRequest(BaseModel):
+    env: Literal["test", "prod"] = "test"
+    reason: str
+    foundry_value: int | None = None
 
 
 class LinkRequest(BaseModel):
@@ -210,6 +223,123 @@ def create_clock(payload: ClockCreate) -> dict:
         conn.close()
 
 
+@router.get("/clocks/mirror/drift")
+def check_clock_mirror_drift(env: Literal["test", "prod"] = "test") -> dict:
+    id_col = f"foundry_clock_id_{env}"
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT * FROM clocks
+                WHERE {id_col} <> '' AND mirror_state <> 'not_mirrored'
+                ORDER BY created_at
+                """
+            )
+            rows = [dict(row) for row in cur.fetchall()]
+            if not rows:
+                return {"env": env, "checked": 0, "verdicts": []}
+            try:
+                client = clockworks_mirror.load_relay_client(env)
+                verdicts = clockworks_mirror.check_drift(client, rows, env)
+            except (RelayError, clockworks_mirror.MirrorError) as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+            drift_ids = {v["clock_id"] for v in verdicts if v["kind"] == "value_drift"}
+            missing_ids = {v["clock_id"] for v in verdicts if v["kind"] == "missing_mirror"}
+            clean_ids = {str(row["id"]) for row in rows} - drift_ids - missing_ids
+            if drift_ids:
+                cur.execute(
+                    "UPDATE clocks SET freshness_state = 'stale_mirror', updated_at = now() "
+                    "WHERE id::text = ANY(%s)",
+                    (list(drift_ids),),
+                )
+            if missing_ids:
+                cur.execute(
+                    "UPDATE clocks SET mirror_state = 'missing_mirror', updated_at = now() "
+                    "WHERE id::text = ANY(%s)",
+                    (list(missing_ids),),
+                )
+            if clean_ids:
+                cur.execute(
+                    "UPDATE clocks SET freshness_state = 'fresh', "
+                    "mirror_state = CASE WHEN mirror_state = 'missing_mirror' THEN 'mirrored' ELSE mirror_state END, "
+                    "updated_at = now() WHERE id::text = ANY(%s)",
+                    (list(clean_ids),),
+                )
+            conn.commit()
+            return {"env": env, "checked": len(rows), "verdicts": verdicts}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/clocks/{clock_id}/mirror/adopt")
+def create_drift_adopt_review(clock_id: UUID, payload: AdoptDriftRequest) -> dict:
+    if not payload.reason.strip():
+        raise HTTPException(status_code=422, detail="reason is required")
+    id_col = f"foundry_clock_id_{payload.env}"
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            clock = _get_clock(cur, str(clock_id))
+            if clock["freshness_state"] != "stale_mirror":
+                raise HTTPException(status_code=409, detail="clock is not marked stale_mirror")
+            foundry_value = payload.foundry_value
+            if foundry_value is None:
+                try:
+                    client = clockworks_mirror.load_relay_client(payload.env)
+                    verdicts = clockworks_mirror.check_drift(client, [clock], payload.env)
+                except (RelayError, clockworks_mirror.MirrorError) as exc:
+                    raise HTTPException(status_code=502, detail=str(exc)) from exc
+                value_verdict = next(
+                    (v for v in verdicts if v["clock_id"] == str(clock_id) and "value" in v.get("fields", {})),
+                    None,
+                )
+                if value_verdict is None:
+                    raise HTTPException(status_code=409, detail="no Foundry value drift to adopt")
+                foundry_value = value_verdict["fields"]["value"]["foundry"]
+            cur.execute(
+                """
+                INSERT INTO sync_reviews (
+                  review_type, source_surface, target_surface, target_type, target_id,
+                  base_version, current_version, proposed_changes, review_status
+                )
+                VALUES ('clock_drift_adopt', %(source_surface)s, 'postgres', 'clock', %(target_id)s,
+                        %(base_version)s, %(current_version)s, %(proposed_changes)s, 'pending')
+                RETURNING id, review_status
+                """,
+                {
+                    "source_surface": f"foundry_{payload.env}",
+                    "target_id": str(clock_id),
+                    "base_version": str(clock["filled"]),
+                    "current_version": str(foundry_value),
+                    "proposed_changes": psycopg2.extras.Json({
+                        "env": payload.env,
+                        "foundry_value": foundry_value,
+                        "reason": payload.reason.strip(),
+                        "foundry_clock_id": clock[id_col],
+                    }),
+                },
+            )
+            row = dict(cur.fetchone())
+            conn.commit()
+            return {"id": str(row["id"]), "review_status": row["review_status"]}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 @router.get("/clocks/{clock_id}")
 def get_clock(clock_id: UUID) -> dict:
     conn = get_connection()
@@ -219,6 +349,76 @@ def get_clock(clock_id: UUID) -> dict:
             out = _row_to_clock(row)
             out["links"] = _clock_links(cur, row["graph_endpoint_id"])
             return out
+    finally:
+        conn.close()
+
+
+@router.post("/clocks/{clock_id}/mirror")
+def create_clock_mirror_review(clock_id: UUID, payload: MirrorRequest) -> dict:
+    id_col = f"foundry_clock_id_{payload.env}"
+    target_surface = f"foundry_{payload.env}"
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            clock = _get_clock(cur, str(clock_id))
+            current_foundry_id = clock[id_col]
+            if payload.action == "establish" and current_foundry_id:
+                raise HTTPException(status_code=409, detail=f"clock is already mirrored to {payload.env}")
+            if payload.action == "unmirror" and not current_foundry_id:
+                raise HTTPException(status_code=409, detail=f"clock is not mirrored to {payload.env}")
+            cur.execute(
+                """
+                SELECT id FROM sync_reviews
+                WHERE review_type = 'clock_mirror'
+                  AND target_type = 'clock'
+                  AND target_id = %s
+                  AND target_surface = %s
+                  AND review_status = 'pending'
+                """,
+                (str(clock_id), target_surface),
+            )
+            if cur.fetchone():
+                raise HTTPException(status_code=409, detail="pending clock mirror review already exists")
+            if payload.action == "unmirror":
+                proposed = {
+                    "action": "unmirror",
+                    "env": payload.env,
+                    "foundry_clock_id": current_foundry_id,
+                }
+            else:
+                foundry_id = current_foundry_id or clockworks_mirror.new_foundry_id()
+                proposed = {
+                    "action": "establish",
+                    "env": payload.env,
+                    "entry": clockworks_mirror.render_clockworks_entry(clock, foundry_id),
+                }
+            cur.execute(
+                """
+                INSERT INTO sync_reviews (
+                  review_type, source_surface, target_surface, target_type, target_id,
+                  base_version, current_version, proposed_changes, review_status
+                )
+                VALUES ('clock_mirror', 'postgres', %(target_surface)s, 'clock', %(target_id)s,
+                        %(base_version)s, %(current_version)s, %(proposed_changes)s, 'pending')
+                RETURNING id, review_status
+                """,
+                {
+                    "target_surface": target_surface,
+                    "target_id": str(clock_id),
+                    "base_version": "",
+                    "current_version": str(clock["updated_at"]),
+                    "proposed_changes": psycopg2.extras.Json(proposed),
+                },
+            )
+            row = dict(cur.fetchone())
+            conn.commit()
+            return {"id": str(row["id"]), "review_status": row["review_status"]}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

@@ -463,6 +463,116 @@ def _apply_vault_import(cur, review: dict) -> dict:
     }
 
 
+def _apply_clock_mirror(cur, review: dict) -> dict:
+    from . import clockworks_mirror
+
+    changes = review["proposed_changes"] or {}
+    env = changes["env"]
+    id_col = f"foundry_clock_id_{env}"
+    other_env = "prod" if env == "test" else "test"
+    target_id = str(review["target_id"])
+    cur.execute("SELECT * FROM clocks WHERE id::text = %s FOR UPDATE", (target_id,))
+    clock = cur.fetchone()
+    if clock is None:
+        raise HTTPException(status_code=409, detail=f"clock {target_id} no longer exists")
+
+    client = clockworks_mirror.load_relay_client(env)
+    if changes["action"] == "unmirror":
+        foundry_id = changes["foundry_clock_id"]
+        clockworks_mirror.remove_entry(client, foundry_id)
+        cur.execute(
+            f"""
+            UPDATE clocks
+            SET {id_col} = '',
+                mirror_state = CASE WHEN foundry_clock_id_{other_env} = ''
+                                    THEN 'not_mirrored' ELSE 'mirrored' END,
+                updated_at = now()
+            WHERE id = %s
+            """,
+            (clock["id"],),
+        )
+        cur.execute(
+            """
+            UPDATE sync_reviews
+            SET review_status = 'accepted', applied_at = now(), updated_at = now()
+            WHERE id = %s
+            """,
+            (review["id"],),
+        )
+        return {"applied": True, "action": "unmirror", "env": env, "removed": foundry_id}
+
+    entry = dict(changes["entry"])
+    entry.update(clockworks_mirror.render_clockworks_entry(clock, entry["id"]))
+    clockworks_mirror.push_entry(client, entry)
+    cur.execute(
+        f"""
+        UPDATE clocks
+        SET {id_col} = %s,
+            mirror_state = 'mirrored',
+            last_mirrored_at = now(),
+            freshness_state = 'fresh',
+            updated_at = now()
+        WHERE id = %s
+        """,
+        (entry["id"], clock["id"]),
+    )
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted', applied_at = now(), updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {
+        "applied": True,
+        "action": "establish",
+        "env": env,
+        "foundry_clock_id": entry["id"],
+        "entry": entry,
+    }
+
+
+def _apply_clock_drift_adopt(cur, review: dict) -> dict:
+    from .clock_engine import fire_manual_tick
+
+    changes = review["proposed_changes"] or {}
+    cur.execute("SELECT * FROM clocks WHERE id::text = %s FOR UPDATE", (str(review["target_id"]),))
+    clock = cur.fetchone()
+    if clock is None:
+        raise HTTPException(status_code=409, detail=f"clock {review['target_id']} no longer exists")
+    foundry_value = int(changes["foundry_value"])
+    delta = foundry_value - clock["filled"]
+    if delta == 0:
+        cur.execute(
+            "UPDATE clocks SET freshness_state = 'fresh', updated_at = now() WHERE id = %s",
+            (clock["id"],),
+        )
+        fire_result = {"trigger_fire_id": "", "dry_run": False, "applied": []}
+    else:
+        fire_result = fire_manual_tick(
+            cur.connection,
+            str(clock["id"]),
+            delta,
+            reason=changes.get("reason") or f"Adopted Foundry {changes['env']} value {foundry_value}",
+            dry_run=False,
+            caused_by="drift_adopt",
+        )
+        cur.execute(
+            "UPDATE clocks SET freshness_state = 'fresh', updated_at = now() WHERE id = %s",
+            (clock["id"],),
+        )
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted', applied_at = now(), updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {"applied": True, "action": "drift_adopt", "delta": delta, "fire_result": fire_result}
+
+
 @router.get("/sync/reviews")
 def list_sync_reviews(
     review_status: str | None = None,
@@ -707,6 +817,18 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
 
             if review["review_type"] == "vault_import" and review["target_type"] == "entity":
                 result = _apply_vault_import(cur, review)
+                result = _finish_apply_job(cur, job_id, result)
+                conn.commit()
+                return result
+
+            if review["review_type"] == "clock_mirror" and review["target_type"] == "clock":
+                result = _apply_clock_mirror(cur, review)
+                result = _finish_apply_job(cur, job_id, result)
+                conn.commit()
+                return result
+
+            if review["review_type"] == "clock_drift_adopt" and review["target_type"] == "clock":
+                result = _apply_clock_drift_adopt(cur, review)
                 result = _finish_apply_job(cur, job_id, result)
                 conn.commit()
                 return result
