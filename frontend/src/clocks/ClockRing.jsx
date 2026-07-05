@@ -22,7 +22,9 @@ function wedgePath(cx, cy, r, startAngle, endAngle) {
 export function ClockRing({ segments, filled, kind, size = 72 }) {
   const cx = size / 2, cy = size / 2, r = size / 2 - 3;
   const gap = segments > 1 ? 0.04 : 0; // radians of breathing room between wedges
-  const shown = kind === "countdown" ? filled : filled; // countdown: filled = remaining
+  // No kind-specific inversion needed: countdown clocks already store
+  // `filled` as the count of remaining segments per the engine contract.
+  const shown = filled;
   const wedges = [];
   for (let i = 0; i < segments; i++) {
     const start = (i / segments) * TAU + gap / 2;

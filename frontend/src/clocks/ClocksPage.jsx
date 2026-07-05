@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ChevronDown,
@@ -13,6 +14,7 @@ import {
 import CustomSelect from "../components/CustomSelect";
 import { ClockRing } from "./ClockRing";
 import {
+  useClockDetailQuery,
   useClocksQuery,
   useClockTicksQuery,
   useCreateClock,
@@ -21,6 +23,7 @@ import {
   useTickClock,
   useUpdateLifecycle,
 } from "../api/clocks";
+import CascadePanel from "./CascadePanel";
 
 // ── Static option lists ─────────────────────────────────────────────────────
 
@@ -196,6 +199,7 @@ function ClockCard({ clock, onTick, onResolve, onMirror }) {
   const { data: ticks = [], isLoading: ticksLoading } = useClockTicksQuery(
     historyOpen ? clock.id : null
   );
+  const { data: detail } = useClockDetailQuery(historyOpen ? clock.id : null);
 
   const chip = mirrorChip(clock);
   const flagged = needsResolution(clock);
@@ -231,6 +235,16 @@ function ClockCard({ clock, onTick, onResolve, onMirror }) {
           <AlertTriangle size={14} />
           <span>Needs resolution</span>
           <button onClick={() => onResolve(clock)}>Resolve</button>
+        </div>
+      )}
+
+      {historyOpen && detail?.links?.length > 0 && (
+        <div className="clock-link-chips">
+          {detail.links.map((link) => (
+            <span key={link.id} className="badge">
+              {link.target_type}: {link.target_id.split(":").slice(1).join(":") || link.target_id}
+            </span>
+          ))}
         </div>
       )}
 
@@ -294,6 +308,7 @@ function ClockCard({ clock, onTick, onResolve, onMirror }) {
 // ── Clocks page ──────────────────────────────────────────────────────────────
 
 export default function ClocksPage() {
+  const queryClient = useQueryClient();
   const [lifecycleFilter, setLifecycleFilter] = useState("active");
   const [formOpen, setFormOpen] = useState(false);
   const [newClock, setNewClock] = useState(DEFAULT_NEW_CLOCK);
@@ -422,6 +437,7 @@ export default function ClocksPage() {
       setDriftResult((prev) =>
         prev ? { ...prev, verdicts: prev.verdicts.filter((v) => v.clock_id !== clockId) } : prev
       );
+      queryClient.invalidateQueries({ queryKey: ["clocks"] });
     } catch (e) {
       setError(e.message || String(e));
     }
@@ -586,6 +602,13 @@ export default function ClocksPage() {
           ))}
         </div>
       )}
+
+      <CascadePanel
+        clocks={clocks}
+        clockNameById={clockNameById}
+        onStatus={setStatus}
+        onError={setError}
+      />
 
       {tickTarget && (
         <TickModal
