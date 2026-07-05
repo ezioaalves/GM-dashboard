@@ -1771,6 +1771,49 @@ button.deck-card {
   margin-bottom: var(--space-4);
 }
 
+.clock-strip {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+}
+
+.clock-strip-item {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  border-radius: var(--radius-md);
+  flex: 0 0 auto;
+  min-height: 46px;
+  max-width: 260px;
+  padding: var(--space-1) var(--space-2);
+}
+
+.clock-strip-item--terminal {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.clock-strip-item--stale {
+  border-color: #a88750;
+}
+
+.clock-strip-name {
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clock-strip-count {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
 .clock-drift-clean {
   color: var(--color-text-muted);
   font-size: var(--text-sm);

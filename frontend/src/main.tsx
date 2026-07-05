@@ -7,8 +7,10 @@ import SceneDeck from "./scenes/SceneDeck";
 import SessionDeck from "./sessions/SessionDeck";
 import SessionNote from "./SessionNote";
 import ThreadDirectionDashboard from "./threads/ThreadDirectionDashboard";
+import ClocksPage from "./clocks/ClocksPage";
 import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
+import { ClockStrip } from "./components/ClockStrip";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -122,6 +124,8 @@ function App() {
           ))}
         </section>
 
+        <ClockStrip onOpenClocks={() => openTool("clocks")} />
+
         {(status || error) && (
           <section className={`notice ${error ? "bad" : "ok"}`}>
             <span>{error || status}</span>
@@ -161,6 +165,7 @@ function App() {
               onErrorChange={setError}
             />
           )}
+          {activeTool === "clocks" && <ClocksPage />}
           {activeTool === "search" && (
             <div className="toolPanel">
               <div className="panelHeader">
