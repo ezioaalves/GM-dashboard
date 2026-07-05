@@ -463,6 +463,72 @@ def _apply_vault_import(cur, review: dict) -> dict:
     }
 
 
+def _apply_asset_import(cur, review: dict) -> dict:
+    payload = review["proposed_changes"] or {}
+    source_path = payload.get("source_path", "")
+    if not source_path:
+        raise HTTPException(status_code=409, detail="asset_import review has no asset payload")
+
+    duplicate_of = payload.get("duplicate_of")
+    freshness_state = "conflict" if duplicate_of else "fresh"
+
+    cur.execute(
+        """
+        INSERT INTO lore_assets (
+          source_path, source_hash, asset_type, status, title, width, height,
+          review_status, freshness_state, last_checked_at
+        )
+        VALUES (
+          %(source_path)s, %(source_hash)s, %(asset_type)s, %(status)s, %(title)s,
+          %(width)s, %(height)s, 'accepted', %(freshness_state)s, now()
+        )
+        ON CONFLICT (source_path) DO UPDATE SET
+          source_hash = EXCLUDED.source_hash,
+          asset_type = EXCLUDED.asset_type,
+          status = EXCLUDED.status,
+          title = EXCLUDED.title,
+          width = EXCLUDED.width,
+          height = EXCLUDED.height,
+          review_status = 'accepted',
+          freshness_state = EXCLUDED.freshness_state,
+          last_checked_at = now(),
+          updated_at = now()
+        RETURNING id
+        """,
+        {
+            "source_path": source_path,
+            "source_hash": payload.get("source_hash", review["current_version"]),
+            "asset_type": payload.get("asset_type", "image"),
+            "status": payload.get("status", "current"),
+            "title": payload.get("title", ""),
+            "width": payload.get("width"),
+            "height": payload.get("height"),
+            "freshness_state": freshness_state,
+        },
+    )
+    asset_id = str(cur.fetchone()["id"])
+
+    if duplicate_of:
+        cur.execute(
+            """
+            UPDATE lore_assets
+            SET freshness_state = 'conflict', updated_at = now()
+            WHERE source_path = %s
+            """,
+            (duplicate_of,),
+        )
+
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted', applied_at = now(), updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {"applied": True, "asset_id": asset_id, "conflict_with": duplicate_of}
+
+
 def _apply_clock_mirror(cur, review: dict) -> dict:
     from . import clockworks_mirror
 
@@ -817,6 +883,12 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
 
             if review["review_type"] == "vault_import" and review["target_type"] == "entity":
                 result = _apply_vault_import(cur, review)
+                result = _finish_apply_job(cur, job_id, result)
+                conn.commit()
+                return result
+
+            if review["review_type"] == "asset_import" and review["target_type"] == "asset":
+                result = _apply_asset_import(cur, review)
                 result = _finish_apply_job(cur, job_id, result)
                 conn.commit()
                 return result

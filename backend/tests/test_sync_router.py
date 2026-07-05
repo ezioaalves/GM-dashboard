@@ -33,6 +33,7 @@ def _clean() -> None:
         cur.execute("DELETE FROM lore_sections")
         cur.execute("DELETE FROM lore_entities")
         cur.execute("DELETE FROM lore_sources")
+        cur.execute("DELETE FROM lore_assets")
         cur.execute("DELETE FROM sync_reviews")
         cur.execute("DELETE FROM sync_jobs")
     conn.close()
@@ -82,6 +83,7 @@ def _seed_review(**overrides) -> dict:
         "base_version": "",
         "current_version": "",
         "proposed_changes": {},
+        "conflict_flags": [],
     }
     base.update(overrides)
     conn = _connect()
@@ -91,12 +93,12 @@ def _seed_review(**overrides) -> dict:
                 """
                 INSERT INTO sync_reviews (
                   review_type, source_surface, target_surface, target_type, target_id,
-                  base_version, current_version, proposed_changes, review_status
+                  base_version, current_version, proposed_changes, conflict_flags, review_status
                 )
                 VALUES (
                   %(review_type)s, %(source_surface)s, %(target_surface)s, %(target_type)s,
                   %(target_id)s, %(base_version)s, %(current_version)s,
-                  %(proposed_changes)s, %(review_status)s
+                  %(proposed_changes)s, %(conflict_flags)s, %(review_status)s
                 )
                 RETURNING *
                 """,
@@ -104,6 +106,7 @@ def _seed_review(**overrides) -> dict:
                     **base,
                     "review_status": overrides.get("review_status", "pending"),
                     "proposed_changes": psycopg2.extras.Json(base["proposed_changes"]),
+                    "conflict_flags": psycopg2.extras.Json(base["conflict_flags"]),
                 },
             )
             return dict(cur.fetchone())
@@ -258,13 +261,13 @@ def test_apply_review_is_idempotent_and_returns_already_applied_result():
 
 def test_apply_review_blocks_and_records_error_for_unsupported_review_type():
     review = _seed_review(
-        review_type="asset_import",
+        review_type="totally_unsupported_type",
         target_type="asset",
         review_status="accepted",
     )
     res = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
     assert res.status_code == 409
-    assert "asset_import" in res.json()["detail"]
+    assert "totally_unsupported_type" in res.json()["detail"]
 
     freshness = client.get("/api/sync/freshness")
     assert freshness.status_code == 200
@@ -393,3 +396,108 @@ def test_apply_vault_import_reapply_updates_sections_without_duplicating():
 
     entity = client.get(f"/api/lore/entities/{first.json()['entity_id']}")
     assert len(entity.json()["sections"]) == 1
+
+
+ASSET_IMPORT_PAYLOAD = {
+    "source_path": "Lore/Assets/Images/NPCs/scar.png",
+    "source_hash": "hash-scar",
+    "asset_type": "image",
+    "status": "current",
+    "title": "scar",
+    "width": 10,
+    "height": 20,
+    "duplicate_of": None,
+}
+
+
+def test_apply_asset_import_creates_asset_row():
+    review = _seed_review(
+        review_type="asset_import",
+        target_type="asset",
+        target_id="",
+        base_version="",
+        current_version="hash-scar",
+        review_status="accepted",
+        proposed_changes=ASSET_IMPORT_PAYLOAD,
+    )
+
+    applied = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["applied"] is True
+    assert body["asset_id"]
+    assert body["conflict_with"] is None
+
+    asset = client.get(f"/api/assets/{body['asset_id']}")
+    assert asset.status_code == 200
+    asset_body = asset.json()
+    assert asset_body["source_path"] == "Lore/Assets/Images/NPCs/scar.png"
+    assert asset_body["source_hash"] == "hash-scar"
+    assert asset_body["status"] == "current"
+    assert asset_body["width"] == 10
+    assert asset_body["height"] == 20
+    assert asset_body["review_status"] == "accepted"
+    assert asset_body["freshness_state"] == "fresh"
+
+
+def test_apply_asset_import_without_asset_payload_returns_409():
+    review = _seed_review(
+        review_type="asset_import",
+        target_type="asset",
+        review_status="accepted",
+        proposed_changes={},
+    )
+    res = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert res.status_code == 409
+    assert "asset_import review has no asset payload" in res.json()["detail"]
+
+
+def test_apply_asset_import_reapply_updates_existing_row():
+    review = _seed_review(
+        review_type="asset_import",
+        target_type="asset",
+        review_status="accepted",
+        current_version="hash-scar",
+        proposed_changes=ASSET_IMPORT_PAYLOAD,
+    )
+    client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+
+    updated_payload = {**ASSET_IMPORT_PAYLOAD, "source_hash": "hash-scar-v2", "width": 99}
+    review2 = _seed_review(
+        review_type="asset_import",
+        target_type="asset",
+        review_status="accepted",
+        current_version="hash-scar-v2",
+        proposed_changes=updated_payload,
+    )
+    applied2 = client.post(f"/api/sync/reviews/{review2['id']}/apply", json={"confirmation": True})
+    assert applied2.status_code == 200
+
+    listed = client.get("/api/assets?q=scar")
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["source_hash"] == "hash-scar-v2"
+    assert listed.json()[0]["width"] == 99
+
+
+def test_apply_asset_import_sets_conflict_freshness_on_both_rows_when_duplicate():
+    existing = client.post(
+        "/api/assets", json={"source_path": "Lore/Assets/Images/NPCs/already-registered.png"}
+    ).json()
+
+    review = _seed_review(
+        review_type="asset_import",
+        target_type="asset",
+        review_status="accepted",
+        current_version="hash-scar",
+        conflict_flags=["duplicate_content"],
+        proposed_changes={**ASSET_IMPORT_PAYLOAD, "duplicate_of": existing["source_path"]},
+    )
+    applied = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert applied.status_code == 200
+    assert applied.json()["conflict_with"] == existing["source_path"]
+
+    new_asset = client.get(f"/api/assets/{applied.json()['asset_id']}").json()
+    assert new_asset["freshness_state"] == "conflict"
+
+    original = client.get(f"/api/assets/{existing['id']}").json()
+    assert original["freshness_state"] == "conflict"
