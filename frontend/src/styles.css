@@ -1337,6 +1337,34 @@ pre.sn-draft-tall {
   padding-bottom: var(--space-4);
 }
 
+/* ── Session Prep — Clue Map ───────────────────────────────────── */
+.clue-map-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.clue-map-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.clue-scene-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
 .scene-pins-bar {
   display: flex;
   align-items: center;
