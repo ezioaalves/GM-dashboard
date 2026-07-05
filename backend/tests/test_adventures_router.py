@@ -83,3 +83,60 @@ def test_migration_smoke_generator_tables_seeded():
         keys = [r[0] for r in cur.fetchall()]
     conn.close()
     assert keys == ["combat_objective", "combat_tricks", "combat_type", "mode_tag"]
+
+
+def test_list_adventures_empty():
+    res = client.get("/api/adventures")
+    assert res.status_code == 200
+    assert res.json() == []
+
+
+def test_create_and_get_adventure():
+    res = client.post("/api/adventures", json={
+        "title": "The Archive Route",
+        "pitch": "The 13th Tanto must expose a false training record before Kanimaru's version becomes public truth.",
+        "mode": "investigation",
+        "current_arc": "Training Arc",
+    })
+    assert res.status_code == 201
+    body = res.json()
+    assert body["title"] == "The Archive Route"
+    assert body["status"] == "draft"
+    assert body["stakes"] == {}
+    assert body["spine"] == []
+
+    res = client.get(f"/api/adventures/{body['id']}")
+    assert res.status_code == 200
+    detail = res.json()
+    assert detail["pitch"].startswith("The 13th Tanto")
+    assert detail["pc_pressure"] == []
+    assert detail["rewards"] == []
+    assert detail["clock_links"] == []
+    assert detail["encounters"] == []
+    assert detail["cast"] == []
+    assert detail["sessions"] == []
+
+
+def test_get_adventure_not_found():
+    res = client.get("/api/adventures/999999")
+    assert res.status_code == 404
+
+
+def test_patch_adventure_updates_jsonb_fields():
+    create = client.post("/api/adventures", json={"title": "Court Pressure"}).json()
+    res = client.patch(f"/api/adventures/{create['id']}", json={
+        "status": "ready",
+        "stakes": {"immediate": "A hostage is at risk", "if_ignore": "The hostage is moved"},
+    })
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "ready"
+    assert body["stakes"]["immediate"] == "A hostage is at risk"
+
+
+def test_delete_adventure():
+    create = client.post("/api/adventures", json={"title": "One-shot"}).json()
+    res = client.delete(f"/api/adventures/{create['id']}")
+    assert res.status_code == 200
+    assert res.json() == {"deleted": True}
+    assert client.get(f"/api/adventures/{create['id']}").status_code == 404

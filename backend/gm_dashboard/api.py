@@ -13,6 +13,7 @@ from .sync_router import router as sync_router
 from .lore_router import router as lore_router
 from .threads_router import router as threads_router
 from .clocks_router import router as clocks_router
+from .adventures_router import router as adventures_router
 from .system_enums import enum_catalog
 
 
@@ -24,6 +25,7 @@ app.include_router(sync_router, prefix="/api")
 app.include_router(lore_router, prefix="/api")
 app.include_router(threads_router, prefix="/api")
 app.include_router(clocks_router, prefix="/api")
+app.include_router(adventures_router, prefix="/api")
 
 
 class SessionNoteRequest(BaseModel):
