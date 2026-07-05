@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import requests
+import json
+import os
 
 
 class RelayError(RuntimeError):
@@ -14,10 +16,17 @@ TIMEOUT = 20
 
 
 class RelayClient:
-    def __init__(self, base_url: str, api_key: str, client_id: str):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        client_id: str,
+        clockworks_macro_uuid: str = "",
+    ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.client_id = client_id
+        self.clockworks_macro_uuid = clockworks_macro_uuid
 
     def _headers(self) -> dict:
         return {"x-api-key": self.api_key}
@@ -49,6 +58,45 @@ class RelayClient:
         )
         payload = self._check(resp)
         return payload.get("results") or payload.get("data") or []
+
+    def execute_js(self, script: str) -> dict:
+        resp = requests.post(
+            f"{self.base_url}/execute-js",
+            headers=self._headers(),
+            params={"clientId": self.client_id},
+            json={"script": script},
+            timeout=TIMEOUT,
+        )
+        payload = self._check(resp)
+        result = payload.get("result", payload.get("data", payload))
+        if isinstance(result, str):
+            try:
+                return json.loads(result)
+            except json.JSONDecodeError:
+                return {"value": result}
+        if isinstance(result, dict):
+            return result
+        return {"value": result}
+
+    def execute_macro(self, uuid: str, args: list | None = None) -> dict:
+        args_payload = {str(idx): value for idx, value in enumerate(args or [])}
+        resp = requests.post(
+            f"{self.base_url}/macro/{uuid}/execute",
+            headers=self._headers(),
+            params={"clientId": self.client_id},
+            json={"args": args_payload},
+            timeout=TIMEOUT,
+        )
+        payload = self._check(resp)
+        result = payload.get("result", payload.get("data", payload))
+        if isinstance(result, str):
+            try:
+                return json.loads(result)
+            except json.JSONDecodeError:
+                return {"value": result}
+        if isinstance(result, dict):
+            return result
+        return {"value": result}
 
 
 def _read_env(vault_root: Path) -> dict[str, str]:
@@ -83,6 +131,12 @@ def load_relay_client(env: str = "test") -> RelayClient:
         values.get(f"{prefix}API_KEY")
         or values.get(f"FOUNDRY_API_KEY{suffix}", "")
     )
+    clockworks_macro_uuid = (
+        os.environ.get(f"{prefix}CLOCKWORKS_MACRO_UUID")
+        or os.environ.get(f"FOUNDRY_CLOCKWORKS_MACRO_UUID{suffix}", "")
+        or values.get(f"{prefix}CLOCKWORKS_MACRO_UUID")
+        or values.get(f"FOUNDRY_CLOCKWORKS_MACRO_UUID{suffix}", "")
+    )
     if not base_url or not api_key:
         raise RelayError(f"relay credentials for env={env} are not configured")
     resp = requests.get(f"{base_url.rstrip('/')}/clients",
@@ -93,4 +147,4 @@ def load_relay_client(env: str = "test") -> RelayClient:
     if not clients:
         raise RelayError("no connected Foundry worlds on relay")
     client_id = clients[0].get("id") or clients[0].get("clientId")
-    return RelayClient(base_url, api_key, client_id)
+    return RelayClient(base_url, api_key, client_id, clockworks_macro_uuid)

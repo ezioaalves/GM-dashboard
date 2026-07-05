@@ -68,6 +68,43 @@ class FakeRelay:
         return {"ok": True}
 
 
+class FakeJsRelay(FakeRelay):
+    def search(self, query: str) -> list[dict]:
+        return []
+
+    def execute_js(self, script: str) -> dict:
+        if self.fail_update and "game.settings.set" in script:
+            raise RelayError("fake relay failure")
+        if "game.settings.set" in script:
+            marker = "const value = "
+            start = script.index(marker) + len(marker)
+            end = script.index(";\nawait game.settings.set", start)
+            self.clock_list = json.loads(script[start:end])
+            return {"ok": True, "count": len(self.clock_list)}
+        return {"ok": True, "value": self.clock_list}
+
+
+class FakeMacroRelay(FakeRelay):
+    def __init__(self):
+        super().__init__()
+        self.clockworks_macro_uuid = "Macro.test"
+
+    def execute_macro(self, uuid: str, args: list | None = None) -> dict:
+        assert uuid == self.clockworks_macro_uuid
+        payload = (args or [{}])[0]
+        if "entry" in payload:
+            entry = payload["entry"]
+            self.clock_list[entry["id"]] = {
+                **self.clock_list.get(entry["id"], {}),
+                **entry,
+            }
+            return {"ok": True, "id": entry["id"], "count": len(self.clock_list)}
+        if "removeId" in payload:
+            self.clock_list.pop(payload["removeId"], None)
+            return {"ok": True, "id": payload["removeId"], "count": len(self.clock_list)}
+        return {"ok": False, "error": "bad payload"}
+
+
 @pytest.fixture
 def fake_relay(monkeypatch):
     relay = FakeRelay()
@@ -160,6 +197,29 @@ class TestRelayClient:
         assert out == {"entity": [{"ok": True}]}
         assert mock_put.call_args.kwargs["json"] == {"data": {"value": "{}"}}
 
+    @patch("gm_dashboard.relay_client.requests.post")
+    def test_execute_js_unwraps_result(self, mock_post):
+        mock_post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"type": "execute-js-result", "result": {"ok": True, "value": 3}},
+        )
+        out = self._client().execute_js("return 3")
+        assert out == {"ok": True, "value": 3}
+        assert mock_post.call_args.kwargs["json"] == {"script": "return 3"}
+        assert mock_post.call_args.kwargs["params"] == {"clientId": "client-abc"}
+
+    @patch("gm_dashboard.relay_client.requests.post")
+    def test_execute_macro_posts_args_and_unwraps_result(self, mock_post):
+        mock_post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"type": "macro-execute-result", "result": {"ok": True, "id": "cw"}},
+        )
+        out = self._client().execute_macro("Macro.abc", [{"entry": {"id": "cw"}}])
+        assert out == {"ok": True, "id": "cw"}
+        assert mock_post.call_args.args[0] == "https://relay.example/macro/Macro.abc/execute"
+        assert mock_post.call_args.kwargs["json"] == {"args": {"0": {"entry": {"id": "cw"}}}}
+        assert mock_post.call_args.kwargs["params"] == {"clientId": "client-abc"}
+
     @patch("gm_dashboard.relay_client.requests.get")
     def test_error_raises_relay_error(self, mock_get):
         mock_get.return_value = MagicMock(
@@ -176,13 +236,38 @@ class TestClockWorksMirror:
         assert clockworks_mirror.render_clockworks_entry(progress, "cw-a") == {
             "id": "cw-a",
             "name": "Progress",
-            "max": 6,
-            "value": 2,
+            "size": 6,
+            "filled": 2,
             "listPosition": 0,
             "persist": True,
+            "ownership": {"default": 3},
         }
         countdown = {"name": "Countdown", "segments": 6, "filled": 4}
-        assert clockworks_mirror.render_clockworks_entry(countdown, "cw-b")["value"] == 4
+        assert clockworks_mirror.render_clockworks_entry(countdown, "cw-b")["filled"] == 4
+
+    def test_game_settings_fallback_when_setting_document_is_not_searchable(self):
+        relay = FakeJsRelay()
+        clockworks_mirror.push_entry(
+            relay,
+            {"id": "cw-js", "name": "JS Clock", "size": 4, "filled": 1, "persist": True},
+        )
+        assert relay.clock_list["cw-js"]["name"] == "JS Clock"
+        _, clock_list = clockworks_mirror.read_clock_list(relay)
+        assert clock_list["cw-js"]["filled"] == 1
+        clockworks_mirror.remove_entry(relay, "cw-js")
+        assert "cw-js" not in relay.clock_list
+
+    def test_macro_write_path_when_macro_uuid_configured(self):
+        relay = FakeMacroRelay()
+        entry = clockworks_mirror.render_clockworks_entry(
+            {"name": "Macro Clock", "segments": 4, "filled": 1},
+            "cw-macro",
+        )
+        clockworks_mirror.push_entry(relay, entry)
+        assert relay.clock_list["cw-macro"]["name"] == "Macro Clock"
+        assert relay.clock_list["cw-macro"]["filled"] == 1
+        clockworks_mirror.remove_entry(relay, "cw-macro")
+        assert "cw-macro" not in relay.clock_list
 
     def test_mirror_review_flow(self, clean_db, fake_relay):
         clock_id = _insert_clock()
@@ -194,8 +279,8 @@ class TestClockWorksMirror:
         applied = _apply(review_id)
         foundry_id = applied["foundry_clock_id"]
         assert fake_relay.clock_list[foundry_id]["name"] == "Mirror Clock"
-        assert fake_relay.clock_list[foundry_id]["max"] == 6
-        assert fake_relay.clock_list[foundry_id]["value"] == 2
+        assert fake_relay.clock_list[foundry_id]["size"] == 6
+        assert fake_relay.clock_list[foundry_id]["filled"] == 2
 
         clock = _clock(clock_id)
         assert clock["foundry_clock_id_test"] == foundry_id
@@ -254,7 +339,7 @@ class TestClockWorksMirror:
         _accept(mirror.json()["id"])
         applied = _apply(mirror.json()["id"])
         foundry_id = applied["foundry_clock_id"]
-        fake_relay.clock_list[foundry_id]["value"] = 4
+        fake_relay.clock_list[foundry_id]["filled"] = 4
 
         drift = client.get("/api/clocks/mirror/drift?env=test")
         assert drift.status_code == 200, drift.text
@@ -310,7 +395,7 @@ class TestClockWorksMirror:
             json={"delta": 1, "reason": "Mirror push smoke"},
         )
         assert tick.status_code == 200, tick.text
-        assert fake_relay.clock_list[foundry_id]["value"] == 3
+        assert fake_relay.clock_list[foundry_id]["filled"] == 3
 
         jobs = _clock_push_jobs()
         assert len(jobs) == 1
@@ -339,7 +424,7 @@ class TestClockWorksMirror:
         assert tick.status_code == 200, tick.text
         assert _clock(clock_id)["filled"] == 3
         assert _clock(clock_id)["mirror_state"] == "failed"
-        assert fake_relay.clock_list[foundry_id]["value"] == 2
+        assert fake_relay.clock_list[foundry_id]["filled"] == 2
 
         jobs = _clock_push_jobs()
         assert len(jobs) == 1
@@ -374,8 +459,8 @@ class TestClockWorksMirror:
         )
         assert fired.status_code == 200, fired.text
 
-        assert fake_relay.clock_list[first_foundry_id]["value"] == 2
-        assert fake_relay.clock_list[second_foundry_id]["value"] == 3
+        assert fake_relay.clock_list[first_foundry_id]["filled"] == 2
+        assert fake_relay.clock_list[second_foundry_id]["filled"] == 3
         jobs = _clock_push_jobs()
         assert len(jobs) == 2
         assert {job["target"] for job in jobs} == {
@@ -392,7 +477,7 @@ class TestClockWorksMirror:
             json={"lifecycle": "resolved", "resolution": "Done"},
         )
         assert res.status_code == 200, res.text
-        assert fake_relay.clock_list[foundry_id]["value"] == 2
+        assert fake_relay.clock_list[foundry_id]["filled"] == 2
         jobs = _clock_push_jobs()
         assert len(jobs) == 1
         assert jobs[0]["status"] == "succeeded"
