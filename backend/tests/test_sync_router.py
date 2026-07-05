@@ -501,3 +501,18 @@ def test_apply_asset_import_sets_conflict_freshness_on_both_rows_when_duplicate(
 
     original = client.get(f"/api/assets/{existing['id']}").json()
     assert original["freshness_state"] == "conflict"
+
+
+def test_apply_asset_import_rejects_invalid_status():
+    """Test that _apply_asset_import validates status against ASSET_STATUSES enum."""
+    review = _seed_review(
+        review_type="asset_import",
+        target_type="asset",
+        review_status="accepted",
+        current_version="hash-invalid-status",
+        proposed_changes={**ASSET_IMPORT_PAYLOAD, "status": "bogus"},
+    )
+
+    res = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert res.status_code == 422
+    assert "status" in res.json()["detail"].lower()

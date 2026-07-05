@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .db.get_db import get_connection
-from .system_enums import DECISION_REVIEW_STATUSES
+from .system_enums import ASSET_STATUSES, DECISION_REVIEW_STATUSES
 
 router = APIRouter()
 
@@ -469,6 +469,13 @@ def _apply_asset_import(cur, review: dict) -> dict:
     if not source_path:
         raise HTTPException(status_code=409, detail="asset_import review has no asset payload")
 
+    status = payload.get("status", "current")
+    if status not in ASSET_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"status must be one of {sorted(ASSET_STATUSES)}"
+        )
+
     duplicate_of = payload.get("duplicate_of")
     freshness_state = "conflict" if duplicate_of else "fresh"
 
@@ -499,7 +506,7 @@ def _apply_asset_import(cur, review: dict) -> dict:
             "source_path": source_path,
             "source_hash": payload.get("source_hash", review["current_version"]),
             "asset_type": payload.get("asset_type", "image"),
-            "status": payload.get("status", "current"),
+            "status": status,
             "title": payload.get("title", ""),
             "width": payload.get("width"),
             "height": payload.get("height"),
