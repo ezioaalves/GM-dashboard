@@ -512,3 +512,123 @@ class CascadeRule(Base):
     enabled = Column(Boolean, nullable=False, server_default=text("true"))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class Adventure(Base):
+    __tablename__ = "adventures"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    graph_endpoint_id = Column(Text, nullable=False, unique=True, server_default="")
+    title = Column(Text, nullable=False, server_default="")
+    status = Column(Text, nullable=False, server_default="draft")
+    current_arc = Column(Text, nullable=False, server_default="")
+    pitch = Column(Text, nullable=False, server_default="")
+    mode = Column(Text, nullable=False, server_default="")
+    tone_rule = Column(Text, nullable=False, server_default="")
+    safety_flags = Column(Text, nullable=False, server_default="")
+    feel_target = Column(Text, nullable=False, server_default="")
+    feel_avoid = Column(Text, nullable=False, server_default="")
+    stakes = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    location = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    spine = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    clue_map = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    foundry_needs = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    rules_notes = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    source_path = Column(Text, nullable=False, server_default="")
+    source_hash = Column(Text, nullable=False, server_default="")
+    source_mtime = Column(DateTime(timezone=True))
+    visibility = Column(Text, nullable=False, server_default="gm")
+    freshness_state = Column(Text, nullable=False, server_default="unknown")
+    review_status = Column(Text, nullable=False, server_default="accepted")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    pc_pressure = relationship("AdventurePcPressure", cascade="all, delete-orphan", order_by="AdventurePcPressure.sort_order")
+    rewards = relationship("AdventureReward", cascade="all, delete-orphan", order_by="AdventureReward.sort_order")
+    clock_links = relationship("AdventureClockLink", cascade="all, delete-orphan")
+    encounters = relationship("AdventureEncounter", cascade="all, delete-orphan", order_by="AdventureEncounter.sort_order")
+    cast = relationship("AdventureCast", cascade="all, delete-orphan", order_by="AdventureCast.sort_order")
+
+
+class AdventurePcPressure(Base):
+    __tablename__ = "adventure_pc_pressure"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    adventure_id = Column(Integer, ForeignKey("adventures.id", ondelete="CASCADE"), nullable=False)
+    pc_id = Column(Integer, ForeignKey("pcs.id"), nullable=False)
+    pressure = Column(Text, nullable=False, server_default="")
+    growth = Column(Text, nullable=False, server_default="")
+    cost = Column(Text, nullable=False, server_default="")
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+
+class AdventureReward(Base):
+    __tablename__ = "adventure_rewards"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    adventure_id = Column(Integer, ForeignKey("adventures.id", ondelete="CASCADE"), nullable=False)
+    name = Column(Text, nullable=False, server_default="")
+    type = Column(Text, nullable=False, server_default="")
+    who_cares = Column(Text, nullable=False, server_default="")
+    mechanical_note = Column(Text, nullable=False, server_default="")
+    future_hook = Column(Text, nullable=False, server_default="")
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+
+class AdventureClockLink(Base):
+    __tablename__ = "adventure_clock_links"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    adventure_id = Column(Integer, ForeignKey("adventures.id", ondelete="CASCADE"), nullable=False)
+    clock_id = Column(PGUUID(as_uuid=True), ForeignKey("clocks.id", ondelete="SET NULL"))
+    thread_id = Column(Text, ForeignKey("threads.id", ondelete="SET NULL"))
+    how_it_appears = Column(Text, nullable=False, server_default="")
+    advance_trigger = Column(Text, nullable=False, server_default="")
+    visible_impact = Column(Text, nullable=False, server_default="")
+
+
+class AdventureEncounter(Base):
+    __tablename__ = "adventure_encounters"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    adventure_id = Column(Integer, ForeignKey("adventures.id", ondelete="CASCADE"), nullable=False)
+    name = Column(Text, nullable=False, server_default="")
+    objective = Column(Text, nullable=False, server_default="")
+    opposition = Column(Text, nullable=False, server_default="")
+    terrain_constraint = Column(Text, nullable=False, server_default="")
+    what_changes = Column(Text, nullable=False, server_default="")
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+
+class AdventureCast(Base):
+    __tablename__ = "adventure_cast"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    adventure_id = Column(Integer, ForeignKey("adventures.id", ondelete="CASCADE"), nullable=False)
+    npc_id = Column(Integer, ForeignKey("npcs.id"), nullable=False)
+    role = Column(Text, nullable=False, server_default="")
+    wants_now = Column(Text, nullable=False, server_default="")
+    hides = Column(Text, nullable=False, server_default="")
+    if_helped = Column(Text, nullable=False, server_default="")
+    if_crossed = Column(Text, nullable=False, server_default="")
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+
+class SessionAdventure(Base):
+    __tablename__ = "session_adventures"
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True)
+    adventure_id = Column(Integer, ForeignKey("adventures.id", ondelete="CASCADE"), primary_key=True)
+
+
+class GeneratorTable(Base):
+    __tablename__ = "generator_tables"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(Text, nullable=False, unique=True)
+    label = Column(Text, nullable=False)
+    die = Column(Text, nullable=False)
+
+    entries = relationship("GeneratorEntry", cascade="all, delete-orphan", order_by="GeneratorEntry.sort_order")
+
+
+class GeneratorEntry(Base):
+    __tablename__ = "generator_entries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_id = Column(Integer, ForeignKey("generator_tables.id", ondelete="CASCADE"), nullable=False)
+    roll = Column(Integer, nullable=False)
+    name = Column(Text, nullable=False, server_default="")
+    description = Column(Text, nullable=False, server_default="")
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
