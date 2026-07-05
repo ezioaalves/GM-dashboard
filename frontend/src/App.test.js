@@ -83,5 +83,8 @@ const adventureCard = fs.readFileSync(path.join("frontend", "src", "adventures",
 assert.match(adventureDeck, /New Adventure/);
 assert.match(adventureDeck, /Browse adventures by status/);
 assert.match(adventureCard, /adventure-card-title/);
+const generatorPanel = fs.readFileSync(path.join("frontend", "src", "adventures", "GeneratorPanel.tsx"), "utf8");
+assert.match(generatorPanel, /Roll/);
+assert.match(generatorPanel, /Copy into Encounters row/);
 
 console.log("frontend static cockpit checks passed");
