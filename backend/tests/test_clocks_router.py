@@ -646,3 +646,47 @@ class TestCascadeRoutes:
         }).json()["id"]
         assert client.delete(f"/api/cascades/{rid}").status_code == 200
         assert client.get("/api/cascades").json() == []
+
+    def _mk_rule(self, clock_id):
+        return client.post("/api/cascades", json={
+            "name": "patchable", "trigger_kind": "manual",
+            "effects": [{"clock_id": clock_id, "delta": 1, "reason_template": "x"}],
+        }).json()["id"]
+
+    def test_patch_garbage_trigger_kind_422(self):
+        a, _ = self._mk_clocks()
+        rid = self._mk_rule(a)
+        resp = client.patch(f"/api/cascades/{rid}", json={"trigger_kind": "banana"})
+        assert resp.status_code == 422
+
+    def test_patch_empty_effects_422(self):
+        a, _ = self._mk_clocks()
+        rid = self._mk_rule(a)
+        resp = client.patch(f"/api/cascades/{rid}", json={"effects": []})
+        assert resp.status_code == 422
+
+    def test_patch_zero_delta_effect_422(self):
+        a, _ = self._mk_clocks()
+        rid = self._mk_rule(a)
+        resp = client.patch(f"/api/cascades/{rid}", json={
+            "effects": [{"clock_id": a, "delta": 0, "reason_template": "x"}],
+        })
+        assert resp.status_code == 422
+
+    def test_patch_to_clock_event_without_trigger_fields_422(self):
+        a, _ = self._mk_clocks()
+        rid = self._mk_rule(a)
+        resp = client.patch(f"/api/cascades/{rid}", json={"trigger_kind": "clock_event"})
+        assert resp.status_code == 422
+
+    def test_patch_valid_update_200(self):
+        a, b = self._mk_clocks()
+        rid = self._mk_rule(a)
+        resp = client.patch(f"/api/cascades/{rid}", json={
+            "title": "Patched",
+            "effects": [{"clock_id": b, "delta": -2, "reason_template": "y"}],
+        })
+        assert resp.status_code == 200
+        out = resp.json()
+        assert out["title"] == "Patched"
+        assert out["effects"] == [{"clock_id": b, "delta": -2, "reason_template": "y"}]

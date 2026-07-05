@@ -390,6 +390,26 @@ def delete_clock_link(clock_id: UUID, rel_id: UUID) -> dict:
         conn.close()
 
 
+def _check_trigger_kind(v: str) -> str:
+    if v not in CASCADE_TRIGGER_KINDS:
+        raise ValueError(f"trigger_kind must be one of {sorted(CASCADE_TRIGGER_KINDS)}")
+    return v
+
+
+def _check_effects(v: list[dict]) -> list[dict]:
+    if not v:
+        raise ValueError("at least one effect is required")
+    for effect in v:
+        if not effect.get("clock_id"):
+            raise ValueError("every effect needs a clock_id")
+        delta = effect.get("delta")
+        if not isinstance(delta, int) or delta == 0:
+            raise ValueError("every effect needs a non-zero integer delta")
+        if not isinstance(effect.get("reason_template", ""), str):
+            raise ValueError("effect reason_template must be a string")
+    return v
+
+
 class CascadeRuleCreate(BaseModel):
     name: str
     title: str = ""
@@ -411,22 +431,12 @@ class CascadeRuleCreate(BaseModel):
     @field_validator("trigger_kind")
     @classmethod
     def trigger_kind_valid(cls, v: str) -> str:
-        if v not in CASCADE_TRIGGER_KINDS:
-            raise ValueError(f"trigger_kind must be one of {sorted(CASCADE_TRIGGER_KINDS)}")
-        return v
+        return _check_trigger_kind(v)
 
     @field_validator("effects")
     @classmethod
     def effects_shape(cls, v: list[dict]) -> list[dict]:
-        if not v:
-            raise ValueError("at least one effect is required")
-        for effect in v:
-            if not effect.get("clock_id"):
-                raise ValueError("every effect needs a clock_id")
-            delta = effect.get("delta")
-            if not isinstance(delta, int) or delta == 0:
-                raise ValueError("every effect needs a non-zero integer delta")
-        return v
+        return _check_effects(v)
 
 
 class CascadeRuleUpdate(BaseModel):
@@ -438,6 +448,16 @@ class CascadeRuleUpdate(BaseModel):
     condition: dict | None = None
     effects: list[dict] | None = None
     enabled: bool | None = None
+
+    @field_validator("trigger_kind")
+    @classmethod
+    def trigger_kind_valid(cls, v: str | None) -> str | None:
+        return v if v is None else _check_trigger_kind(v)
+
+    @field_validator("effects")
+    @classmethod
+    def effects_shape(cls, v: list[dict] | None) -> list[dict] | None:
+        return v if v is None else _check_effects(v)
 
 
 class FireRequest(BaseModel):
