@@ -98,6 +98,100 @@ class AdventurePatch(BaseModel):
         return v
 
 
+class CastCreate(BaseModel):
+    npc_id: int
+    role: str = ""
+    wants_now: str = ""
+    hides: str = ""
+    if_helped: str = ""
+    if_crossed: str = ""
+    sort_order: int = 0
+
+
+class CastPatch(BaseModel):
+    npc_id: int | None = None
+    role: str | None = None
+    wants_now: str | None = None
+    hides: str | None = None
+    if_helped: str | None = None
+    if_crossed: str | None = None
+    sort_order: int | None = None
+
+
+class RewardCreate(BaseModel):
+    name: str = ""
+    type: str = ""
+    who_cares: str = ""
+    mechanical_note: str = ""
+    future_hook: str = ""
+    sort_order: int = 0
+
+
+class RewardPatch(BaseModel):
+    name: str | None = None
+    type: str | None = None
+    who_cares: str | None = None
+    mechanical_note: str | None = None
+    future_hook: str | None = None
+    sort_order: int | None = None
+
+
+class EncounterCreate(BaseModel):
+    name: str = ""
+    objective: str = ""
+    opposition: str = ""
+    terrain_constraint: str = ""
+    what_changes: str = ""
+    sort_order: int = 0
+
+
+class EncounterPatch(BaseModel):
+    name: str | None = None
+    objective: str | None = None
+    opposition: str | None = None
+    terrain_constraint: str | None = None
+    what_changes: str | None = None
+    sort_order: int | None = None
+
+
+class PcPressureCreate(BaseModel):
+    pc_id: int
+    pressure: str = ""
+    growth: str = ""
+    cost: str = ""
+    sort_order: int = 0
+
+
+class PcPressurePatch(BaseModel):
+    pc_id: int | None = None
+    pressure: str | None = None
+    growth: str | None = None
+    cost: str | None = None
+    sort_order: int | None = None
+
+
+class ClockLinkCreate(BaseModel):
+    clock_id: str | None = None
+    thread_id: str | None = None
+    how_it_appears: str = ""
+    advance_trigger: str = ""
+    visible_impact: str = ""
+
+    @model_validator(mode="after")
+    def require_target(self) -> "ClockLinkCreate":
+        if not self.clock_id and not self.thread_id:
+            raise ValueError("clock_id or thread_id is required")
+        return self
+
+
+class ClockLinkPatch(BaseModel):
+    clock_id: str | None = None
+    thread_id: str | None = None
+    how_it_appears: str | None = None
+    advance_trigger: str | None = None
+    visible_impact: str | None = None
+
+
 def _get_adventure_or_404(db: DBSession, adventure_id: int) -> Adventure:
     adventure = db.query(Adventure).filter(Adventure.id == adventure_id).first()
     if not adventure:
@@ -247,5 +341,156 @@ def patch_adventure(adventure_id: int, payload: AdventurePatch, db: DBSession = 
 def delete_adventure(adventure_id: int, db: DBSession = Depends(get_db)) -> dict:
     adventure = _get_adventure_or_404(db, adventure_id)
     db.delete(adventure)
+    db.commit()
+    return {"deleted": True}
+
+
+def _get_child_or_404(db: DBSession, model, row_id: int, adventure_id: int, label: str):
+    row = (
+        db.query(model)
+        .filter(model.id == row_id, model.adventure_id == adventure_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail=f"{label} {row_id} not found on adventure {adventure_id}")
+    return row
+
+
+@router.post("/adventures/{adventure_id}/cast", status_code=201)
+def create_cast(adventure_id: int, payload: CastCreate, db: DBSession = Depends(get_db)) -> dict:
+    _get_adventure_or_404(db, adventure_id)
+    row = AdventureCast(adventure_id=adventure_id, **payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _cast_to_dict(row)
+
+
+@router.patch("/adventures/{adventure_id}/cast/{cast_id}")
+def patch_cast(adventure_id: int, cast_id: int, payload: CastPatch, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventureCast, cast_id, adventure_id, "Cast row")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return _cast_to_dict(row)
+
+
+@router.delete("/adventures/{adventure_id}/cast/{cast_id}")
+def delete_cast(adventure_id: int, cast_id: int, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventureCast, cast_id, adventure_id, "Cast row")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True}
+
+
+@router.post("/adventures/{adventure_id}/rewards", status_code=201)
+def create_reward(adventure_id: int, payload: RewardCreate, db: DBSession = Depends(get_db)) -> dict:
+    _get_adventure_or_404(db, adventure_id)
+    row = AdventureReward(adventure_id=adventure_id, **payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _reward_to_dict(row)
+
+
+@router.patch("/adventures/{adventure_id}/rewards/{reward_id}")
+def patch_reward(adventure_id: int, reward_id: int, payload: RewardPatch, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventureReward, reward_id, adventure_id, "Reward")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return _reward_to_dict(row)
+
+
+@router.delete("/adventures/{adventure_id}/rewards/{reward_id}")
+def delete_reward(adventure_id: int, reward_id: int, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventureReward, reward_id, adventure_id, "Reward")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True}
+
+
+@router.post("/adventures/{adventure_id}/encounters", status_code=201)
+def create_encounter(adventure_id: int, payload: EncounterCreate, db: DBSession = Depends(get_db)) -> dict:
+    _get_adventure_or_404(db, adventure_id)
+    row = AdventureEncounter(adventure_id=adventure_id, **payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _encounter_to_dict(row)
+
+
+@router.patch("/adventures/{adventure_id}/encounters/{encounter_id}")
+def patch_encounter(adventure_id: int, encounter_id: int, payload: EncounterPatch, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventureEncounter, encounter_id, adventure_id, "Encounter")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return _encounter_to_dict(row)
+
+
+@router.delete("/adventures/{adventure_id}/encounters/{encounter_id}")
+def delete_encounter(adventure_id: int, encounter_id: int, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventureEncounter, encounter_id, adventure_id, "Encounter")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True}
+
+
+@router.post("/adventures/{adventure_id}/pc-pressure", status_code=201)
+def create_pc_pressure(adventure_id: int, payload: PcPressureCreate, db: DBSession = Depends(get_db)) -> dict:
+    _get_adventure_or_404(db, adventure_id)
+    row = AdventurePcPressure(adventure_id=adventure_id, **payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _pc_pressure_to_dict(row)
+
+
+@router.patch("/adventures/{adventure_id}/pc-pressure/{row_id}")
+def patch_pc_pressure(adventure_id: int, row_id: int, payload: PcPressurePatch, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventurePcPressure, row_id, adventure_id, "PC pressure row")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return _pc_pressure_to_dict(row)
+
+
+@router.delete("/adventures/{adventure_id}/pc-pressure/{row_id}")
+def delete_pc_pressure(adventure_id: int, row_id: int, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventurePcPressure, row_id, adventure_id, "PC pressure row")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True}
+
+
+@router.post("/adventures/{adventure_id}/clock-links", status_code=201)
+def create_clock_link(adventure_id: int, payload: ClockLinkCreate, db: DBSession = Depends(get_db)) -> dict:
+    _get_adventure_or_404(db, adventure_id)
+    row = AdventureClockLink(adventure_id=adventure_id, **payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _clock_link_to_dict(row)
+
+
+@router.patch("/adventures/{adventure_id}/clock-links/{link_id}")
+def patch_clock_link(adventure_id: int, link_id: int, payload: ClockLinkPatch, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventureClockLink, link_id, adventure_id, "Clock link")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return _clock_link_to_dict(row)
+
+
+@router.delete("/adventures/{adventure_id}/clock-links/{link_id}")
+def delete_clock_link(adventure_id: int, link_id: int, db: DBSession = Depends(get_db)) -> dict:
+    row = _get_child_or_404(db, AdventureClockLink, link_id, adventure_id, "Clock link")
+    db.delete(row)
     db.commit()
     return {"deleted": True}

@@ -175,3 +175,100 @@ def test_list_adventures_filters_by_status():
 def test_list_adventures_rejects_invalid_status():
     res = client.get("/api/adventures", params={"status": "bogus"})
     assert res.status_code == 422
+
+
+def test_cast_crud():
+    adventure = client.post("/api/adventures", json={"title": "Cast Test"}).json()
+    npc = seed_npc()
+
+    res = client.post(f"/api/adventures/{adventure['id']}/cast", json={
+        "npc_id": npc["id"], "role": "Informant", "wants_now": "Coin",
+        "hides": "A debt to the clan", "if_helped": "Shares the ledger",
+        "if_crossed": "Sells the PCs out",
+    })
+    assert res.status_code == 201
+    cast_row = res.json()
+    assert cast_row["npc_id"] == npc["id"]
+
+    res = client.patch(
+        f"/api/adventures/{adventure['id']}/cast/{cast_row['id']}",
+        json={"role": "Double Agent"},
+    )
+    assert res.status_code == 200
+    assert res.json()["role"] == "Double Agent"
+
+    detail = client.get(f"/api/adventures/{adventure['id']}").json()
+    assert len(detail["cast"]) == 1
+
+    res = client.delete(f"/api/adventures/{adventure['id']}/cast/{cast_row['id']}")
+    assert res.status_code == 200
+    detail = client.get(f"/api/adventures/{adventure['id']}").json()
+    assert detail["cast"] == []
+
+
+def test_rewards_crud():
+    adventure = client.post("/api/adventures", json={"title": "Rewards Test"}).json()
+    res = client.post(f"/api/adventures/{adventure['id']}/rewards", json={
+        "name": "Archive Access", "type": "access", "who_cares": "The 13th Tanto",
+    })
+    assert res.status_code == 201
+    reward = res.json()
+    res = client.patch(f"/api/adventures/{adventure['id']}/rewards/{reward['id']}", json={"future_hook": "Opens Room 6C"})
+    assert res.status_code == 200
+    assert res.json()["future_hook"] == "Opens Room 6C"
+    res = client.delete(f"/api/adventures/{adventure['id']}/rewards/{reward['id']}")
+    assert res.status_code == 200
+
+
+def test_encounters_crud():
+    adventure = client.post("/api/adventures", json={"title": "Encounters Test"}).json()
+    res = client.post(f"/api/adventures/{adventure['id']}/encounters", json={
+        "name": "Warehouse Ambush", "objective": "Daring Escape", "opposition": "3 genin",
+    })
+    assert res.status_code == 201
+    encounter = res.json()
+    res = client.patch(f"/api/adventures/{adventure['id']}/encounters/{encounter['id']}", json={"what_changes": "Alarm is raised"})
+    assert res.status_code == 200
+    res = client.delete(f"/api/adventures/{adventure['id']}/encounters/{encounter['id']}")
+    assert res.status_code == 200
+
+
+def test_pc_pressure_crud():
+    adventure = client.post("/api/adventures", json={"title": "PC Pressure Test"}).json()
+    pc = seed_pc()
+    res = client.post(f"/api/adventures/{adventure['id']}/pc-pressure", json={
+        "pc_id": pc["id"], "pressure": "Clan expects a clean win",
+    })
+    assert res.status_code == 201
+    row = res.json()
+    res = client.patch(f"/api/adventures/{adventure['id']}/pc-pressure/{row['id']}", json={"cost": "Public reprimand"})
+    assert res.status_code == 200
+    res = client.delete(f"/api/adventures/{adventure['id']}/pc-pressure/{row['id']}")
+    assert res.status_code == 200
+
+
+def test_clock_links_crud_requires_clock_or_thread():
+    adventure = client.post("/api/adventures", json={"title": "Clock Links Test"}).json()
+    res = client.post(f"/api/adventures/{adventure['id']}/clock-links", json={
+        "how_it_appears": "Rumors of a raid",
+    })
+    assert res.status_code == 422
+
+    thread_row_id = "thread-test-1"
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO threads (id, title, status) VALUES (%s, %s, %s)",
+            (thread_row_id, "Test Thread", "active"),
+        )
+    conn.close()
+
+    res = client.post(f"/api/adventures/{adventure['id']}/clock-links", json={
+        "thread_id": thread_row_id, "how_it_appears": "Rumors of a raid",
+    })
+    assert res.status_code == 201
+    link = res.json()
+    assert link["thread_id"] == thread_row_id
+
+    res = client.delete(f"/api/adventures/{adventure['id']}/clock-links/{link['id']}")
+    assert res.status_code == 200
