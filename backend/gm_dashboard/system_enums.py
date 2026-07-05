@@ -49,6 +49,8 @@ ASSET_MIRROR_STATES = frozenset(
     }
 )
 
+ASSET_STATUSES = frozenset({"current", "variant", "rejected"})
+
 SESSION_STATUSES = frozenset({"planned", "ready", "played", "cancelled", "archived"})
 LEGACY_SESSION_STATUSES = frozenset({"Planned", "Active", "Played"})
 
@@ -64,6 +66,7 @@ CLOCK_ORIGINS = frozenset({"manual", "thread_migration"})
 def enum_catalog() -> dict[str, list[str]]:
     return {
         "asset_mirror_states": sorted(ASSET_MIRROR_STATES),
+        "asset_statuses": sorted(ASSET_STATUSES),
         "cascade_trigger_kinds": sorted(CASCADE_TRIGGER_KINDS),
         "clock_events": sorted(CLOCK_EVENTS),
         "clock_kinds": sorted(CLOCK_KINDS),

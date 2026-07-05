@@ -13,6 +13,7 @@ from .db.get_db import get_connection
 from .sync_router import SyncReviewApplyRequest, apply_sync_review
 from .system_enums import (
     ASSET_MIRROR_STATES,
+    ASSET_STATUSES,
     FRESHNESS_STATES,
     GRAPH_ENDPOINT_TYPES,
     RELATIONSHIP_DIRECTIONS,
@@ -1291,6 +1292,7 @@ def get_asset(asset_id: UUID) -> dict:
 
 @router.post("/assets", status_code=201)
 def create_asset(payload: AssetCreate) -> dict:
+    _validate(payload.status, ASSET_STATUSES, "status")
     _validate(payload.visibility, VISIBILITIES, "visibility")
     _validate(payload.freshness_state, FRESHNESS_STATES, "freshness_state")
     _validate(payload.mirror_state, ASSET_MIRROR_STATES, "mirror_state")
@@ -1330,6 +1332,7 @@ def create_asset(payload: AssetCreate) -> dict:
 def patch_asset(asset_id: UUID, payload: AssetPatch) -> dict:
     updates = payload.model_dump(exclude_unset=True)
     for field, allowed in (
+        ("status", ASSET_STATUSES),
         ("visibility", VISIBILITIES),
         ("freshness_state", FRESHNESS_STATES),
         ("mirror_state", ASSET_MIRROR_STATES),

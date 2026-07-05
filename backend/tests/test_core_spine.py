@@ -1232,3 +1232,4 @@ def test_system_enum_catalog_matches_spine_contract_values():
     ]
     assert data["scene_placements"] == ["backlog", "floating", "ordered"]
     assert data["session_statuses"] == ["archived", "cancelled", "planned", "played", "ready"]
+    assert data["asset_statuses"] == ["current", "rejected", "variant"]

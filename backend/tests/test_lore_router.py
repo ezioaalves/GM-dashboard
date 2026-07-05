@@ -261,6 +261,34 @@ def test_create_asset_rejects_invalid_enum_fields():
     assert bad_mirror.status_code == 422
 
 
+def test_create_asset_rejects_invalid_status():
+    res = client.post(
+        "/api/assets",
+        json={"source_path": "Assets/bad-status.png", "status": "made_up"},
+    )
+    assert res.status_code == 422
+
+
+def test_patch_asset_rejects_invalid_status():
+    created = client.post("/api/assets", json={"source_path": "Assets/patch-status.png"}).json()
+    res = client.patch(f"/api/assets/{created['id']}", json={"status": "made_up"})
+    assert res.status_code == 422
+
+
+def test_create_asset_accepts_variant_and_rejected_status():
+    variant = client.post(
+        "/api/assets", json={"source_path": "Assets/variant.png", "status": "variant"}
+    )
+    assert variant.status_code == 201
+    assert variant.json()["status"] == "variant"
+
+    rejected = client.post(
+        "/api/assets", json={"source_path": "Assets/rejected.png", "status": "rejected"}
+    )
+    assert rejected.status_code == 201
+    assert rejected.json()["status"] == "rejected"
+
+
 def test_create_asset_rejects_duplicate_source_path():
     first = client.post("/api/assets", json={"source_path": "Assets/dup.png"})
     assert first.status_code == 201
