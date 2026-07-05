@@ -1,7 +1,7 @@
-import type { Adventure } from "../types/adventure";
+import type { AdventureListItem } from "../types/adventure";
 
 interface Props {
-  adventure: Adventure;
+  adventure: AdventureListItem;
   onClick: () => void;
 }
 

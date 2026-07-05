@@ -177,6 +177,52 @@ def test_list_adventures_rejects_invalid_status():
     assert res.status_code == 422
 
 
+def test_list_adventures_returns_summary_fields_only():
+    create = client.post("/api/adventures", json={
+        "title": "Trimmed Shape Test",
+        "mode": "investigation",
+        "current_arc": "Training Arc",
+        "pitch": "A pitch line",
+    }).json()
+    client.patch(f"/api/adventures/{create['id']}", json={
+        "stakes": {"immediate": "Something is at risk"},
+        "clue_map": {"question": "Who did it?"},
+    })
+
+    res = client.get("/api/adventures")
+    assert res.status_code == 200
+    item = next(a for a in res.json() if a["id"] == create["id"])
+    assert item == {
+        "id": create["id"],
+        "graph_endpoint_id": item["graph_endpoint_id"],
+        "title": "Trimmed Shape Test",
+        "status": "draft",
+        "mode": "investigation",
+        "current_arc": "Training Arc",
+        "pitch": "A pitch line",
+        "session_count": 0,
+    }
+    assert "stakes" not in item
+    assert "clue_map" not in item
+    assert "location" not in item
+    assert "foundry_needs" not in item
+    assert "rules_notes" not in item
+    assert "spine" not in item
+
+
+def test_list_adventures_session_count_single_query():
+    adventure = client.post("/api/adventures", json={"title": "Session Count Test"}).json()
+    session_one = seed_session(number=10, name="Session A")
+    session_two = seed_session(number=11, name="Session B")
+    client.post(f"/api/adventures/{adventure['id']}/sessions/{session_one['id']}")
+    client.post(f"/api/adventures/{adventure['id']}/sessions/{session_two['id']}")
+
+    res = client.get("/api/adventures")
+    assert res.status_code == 200
+    item = next(a for a in res.json() if a["id"] == adventure["id"])
+    assert item["session_count"] == 2
+
+
 def test_cast_crud():
     adventure = client.post("/api/adventures", json={"title": "Cast Test"}).json()
     npc = seed_npc()

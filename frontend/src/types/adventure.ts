@@ -1,5 +1,17 @@
 export type AdventureStatus = "draft" | "ready" | "played" | "archived";
 
+/** Deck-card summary shape returned by GET /api/adventures — no JSONB blobs. */
+export interface AdventureListItem {
+  id: number;
+  graph_endpoint_id: string;
+  title: string;
+  status: AdventureStatus;
+  mode: string;
+  current_arc: string;
+  pitch: string;
+  session_count: number;
+}
+
 export interface Adventure {
   id: number;
   graph_endpoint_id: string;

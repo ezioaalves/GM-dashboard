@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from .db.get_db import get_db
@@ -254,6 +255,20 @@ def _adventure_summary(adventure: Adventure, session_count: int = 0) -> dict:
     }
 
 
+def _adventure_list_item(adventure: Adventure, session_count: int = 0) -> dict:
+    """Lightweight deck-card shape for GET /api/adventures — no JSONB blobs."""
+    return {
+        "id": adventure.id,
+        "graph_endpoint_id": adventure.graph_endpoint_id or f"adventure:{adventure.id}",
+        "title": adventure.title,
+        "status": adventure.status,
+        "mode": adventure.mode,
+        "current_arc": adventure.current_arc,
+        "pitch": adventure.pitch,
+        "session_count": session_count,
+    }
+
+
 def _pc_pressure_to_dict(row: AdventurePcPressure) -> dict:
     return {
         "id": row.id, "pc_id": row.pc_id, "pressure": row.pressure,
@@ -326,19 +341,22 @@ def list_adventures(status: str | None = None, db: DBSession = Depends(get_db)) 
     if status is not None and status not in VALID_ADVENTURE_STATUSES:
         raise HTTPException(status_code=422, detail=f"Invalid status: {status}")
 
-    query = db.query(Adventure)
+    counts_subq = (
+        db.query(
+            SessionAdventure.adventure_id.label("adventure_id"),
+            func.count(SessionAdventure.session_id).label("session_count"),
+        )
+        .group_by(SessionAdventure.adventure_id)
+        .subquery()
+    )
+
+    query = db.query(Adventure, func.coalesce(counts_subq.c.session_count, 0)).outerjoin(
+        counts_subq, counts_subq.c.adventure_id == Adventure.id
+    )
     if status is not None:
         query = query.filter(Adventure.status == status)
-    adventures = query.order_by(Adventure.id.desc()).all()
-    result = []
-    for adventure in adventures:
-        session_count = (
-            db.query(SessionAdventure)
-            .filter(SessionAdventure.adventure_id == adventure.id)
-            .count()
-        )
-        result.append(_adventure_summary(adventure, session_count))
-    return result
+    rows = query.order_by(Adventure.id.desc()).all()
+    return [_adventure_list_item(adventure, session_count) for adventure, session_count in rows]
 
 
 @router.post("/adventures", status_code=201)

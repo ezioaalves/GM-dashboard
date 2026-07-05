@@ -94,6 +94,16 @@ assert.match(adventureForm, /PC Lane Pressure/);
 assert.match(adventureForm, /Rewards And Costs/);
 assert.match(adventureForm, /Clue Map/);
 assert.match(adventureForm, /Foundry Needs/);
+assert.match(adventureForm, /Clock &amp; Thread Links/);
+assert.match(adventureForm, /Select NPC…/);
+assert.match(adventureForm, /Select PC…/);
+assert.match(adventureForm, /Add Link/);
+assert.match(adventureForm, /useNPCsQuery/);
+assert.match(adventureForm, /usePCsQuery/);
+assert.match(adventureForm, /useClocksQuery/);
+assert.match(adventureForm, /useThreadsQuery/);
+assert.doesNotMatch(adventureForm, /npc_id: 0/);
+assert.doesNotMatch(adventureForm, /pc_id: 0/);
 
 assert.match(sidebar, /Adventures/);
 assert.match(app, /AdventureDeck/);

@@ -6,6 +6,7 @@ import type {
   AdventureCreate,
   AdventureDetail,
   AdventureEncounterRow,
+  AdventureListItem,
   AdventurePatch,
   AdventurePcPressureRow,
   AdventureRewardRow,
@@ -35,9 +36,9 @@ const jsonPatch = <T>(url: string, body: unknown) =>
   });
 
 export function useAdventuresQuery() {
-  return useQuery<Adventure[]>({
+  return useQuery<AdventureListItem[]>({
     queryKey: ["adventures"],
-    queryFn: () => apiFetch<Adventure[]>("/api/adventures"),
+    queryFn: () => apiFetch<AdventureListItem[]>("/api/adventures"),
   });
 }
 

@@ -7,7 +7,11 @@ import {
   rewardHooks,
   encounterHooks,
   pcPressureHooks,
+  clockLinkHooks,
 } from "../api/adventures";
+import { useNPCsQuery, usePCsQuery } from "../api/npcs";
+import { useClocksQuery } from "../api/clocks";
+import { useThreadsQuery } from "../api/threads";
 import GeneratorPanel from "./GeneratorPanel";
 
 interface Props {
@@ -15,20 +19,38 @@ interface Props {
   onBack: () => void;
 }
 
+const CLUE_MAP_LANES = ["core", "superior", "optional", "false_leads", "back_doors"] as const;
+
 export default function AdventureForm({ adventureId, onBack }: Props) {
   const { data: adventure, isLoading } = useAdventureQuery(adventureId);
   const patchAdventure = usePatchAdventure();
   const applySpinePreset = useApplySpinePreset();
   const createCast = castHooks.useCreate();
+  const patchCast = castHooks.usePatch();
   const deleteCast = castHooks.useDelete();
   const createReward = rewardHooks.useCreate();
+  const patchReward = rewardHooks.usePatch();
   const deleteReward = rewardHooks.useDelete();
   const createEncounter = encounterHooks.useCreate();
+  const patchEncounter = encounterHooks.usePatch();
   const deleteEncounter = encounterHooks.useDelete();
   const createPcPressure = pcPressureHooks.useCreate();
+  const patchPcPressure = pcPressureHooks.usePatch();
   const deletePcPressure = pcPressureHooks.useDelete();
+  const createClockLink = clockLinkHooks.useCreate();
+  const patchClockLink = clockLinkHooks.usePatch();
+  const deleteClockLink = clockLinkHooks.useDelete();
+
+  const { data: npcs = [] } = useNPCsQuery();
+  const { data: pcs = [] } = usePCsQuery();
+  const { data: clocks = [] } = useClocksQuery();
+  const { data: threads = [] } = useThreadsQuery();
 
   const [showGenerator, setShowGenerator] = useState(false);
+  const [selectedNpcId, setSelectedNpcId] = useState("");
+  const [selectedPcId, setSelectedPcId] = useState("");
+  const [linkTargetType, setLinkTargetType] = useState<"clock" | "thread">("clock");
+  const [linkTargetId, setLinkTargetId] = useState("");
 
   if (isLoading || !adventure) {
     return <p>Loading adventure…</p>;
@@ -89,14 +111,29 @@ export default function AdventureForm({ adventureId, onBack }: Props) {
       <section className="adventure-form-section">
         <h3>PC Lane Pressure</h3>
         <table>
-          <thead><tr><th>PC ID</th><th>Pressure</th><th>Growth</th><th>Cost</th><th /></tr></thead>
+          <thead><tr><th>PC</th><th>Pressure</th><th>Growth</th><th>Cost</th><th /></tr></thead>
           <tbody>
             {adventure.pc_pressure.map((row) => (
               <tr key={row.id}>
-                <td>{row.pc_id}</td>
-                <td>{row.pressure}</td>
-                <td>{row.growth}</td>
-                <td>{row.cost}</td>
+                <td>{pcs.find((pc) => pc.id === row.pc_id)?.name ?? row.pc_id}</td>
+                <td>
+                  <input
+                    defaultValue={row.pressure}
+                    onBlur={(e) => patchPcPressure.mutate({ adventureId, rowId: row.id, pressure: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.growth}
+                    onBlur={(e) => patchPcPressure.mutate({ adventureId, rowId: row.id, growth: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.cost}
+                    onBlur={(e) => patchPcPressure.mutate({ adventureId, rowId: row.id, cost: e.target.value })}
+                  />
+                </td>
                 <td>
                   <button onClick={() => deletePcPressure.mutate({ adventureId, rowId: row.id })}>Remove</button>
                 </td>
@@ -104,27 +141,64 @@ export default function AdventureForm({ adventureId, onBack }: Props) {
             ))}
           </tbody>
         </table>
-        <button
-          className="btn-secondary"
-          onClick={() => createPcPressure.mutate({ adventureId, pc_id: 0, pressure: "" })}
-        >
-          Add PC Pressure Row
-        </button>
+        <div className="adventure-form-picker">
+          <select value={selectedPcId} onChange={(e) => setSelectedPcId(e.target.value)}>
+            <option value="">Select PC…</option>
+            {pcs.map((pc) => (
+              <option key={pc.id} value={pc.id}>{pc.name}</option>
+            ))}
+          </select>
+          <button
+            className="btn-secondary"
+            disabled={!selectedPcId}
+            onClick={() => {
+              createPcPressure.mutate({ adventureId, pc_id: Number(selectedPcId), pressure: "" });
+              setSelectedPcId("");
+            }}
+          >
+            Add PC Pressure Row
+          </button>
+        </div>
       </section>
 
       <section className="adventure-form-section">
         <h3>Cast</h3>
         <table>
-          <thead><tr><th>NPC ID</th><th>Role</th><th>Wants Now</th><th>Hides</th><th>If Helped</th><th>If Crossed</th><th /></tr></thead>
+          <thead><tr><th>NPC</th><th>Role</th><th>Wants Now</th><th>Hides</th><th>If Helped</th><th>If Crossed</th><th /></tr></thead>
           <tbody>
             {adventure.cast.map((row) => (
               <tr key={row.id}>
-                <td>{row.npc_id}</td>
-                <td>{row.role}</td>
-                <td>{row.wants_now}</td>
-                <td>{row.hides}</td>
-                <td>{row.if_helped}</td>
-                <td>{row.if_crossed}</td>
+                <td>{npcs.find((npc) => npc.id === row.npc_id)?.name ?? row.npc_id}</td>
+                <td>
+                  <input
+                    defaultValue={row.role}
+                    onBlur={(e) => patchCast.mutate({ adventureId, rowId: row.id, role: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.wants_now}
+                    onBlur={(e) => patchCast.mutate({ adventureId, rowId: row.id, wants_now: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.hides}
+                    onBlur={(e) => patchCast.mutate({ adventureId, rowId: row.id, hides: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.if_helped}
+                    onBlur={(e) => patchCast.mutate({ adventureId, rowId: row.id, if_helped: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.if_crossed}
+                    onBlur={(e) => patchCast.mutate({ adventureId, rowId: row.id, if_crossed: e.target.value })}
+                  />
+                </td>
                 <td>
                   <button onClick={() => deleteCast.mutate({ adventureId, rowId: row.id })}>Remove</button>
                 </td>
@@ -132,9 +206,100 @@ export default function AdventureForm({ adventureId, onBack }: Props) {
             ))}
           </tbody>
         </table>
-        <button className="btn-secondary" onClick={() => createCast.mutate({ adventureId, npc_id: 0 })}>
-          Add Cast Row
-        </button>
+        <div className="adventure-form-picker">
+          <select value={selectedNpcId} onChange={(e) => setSelectedNpcId(e.target.value)}>
+            <option value="">Select NPC…</option>
+            {npcs.map((npc) => (
+              <option key={npc.id} value={npc.id}>{npc.name}</option>
+            ))}
+          </select>
+          <button
+            className="btn-secondary"
+            disabled={!selectedNpcId}
+            onClick={() => {
+              createCast.mutate({ adventureId, npc_id: Number(selectedNpcId) });
+              setSelectedNpcId("");
+            }}
+          >
+            Add Cast Row
+          </button>
+        </div>
+      </section>
+
+      <section className="adventure-form-section">
+        <h3>Clock &amp; Thread Links</h3>
+        <table>
+          <thead><tr><th>Target</th><th>How It Appears</th><th>Advance Trigger</th><th>Visible Impact</th><th /></tr></thead>
+          <tbody>
+            {adventure.clock_links.map((row) => {
+              const targetLabel = row.clock_id
+                ? clocks.find((c) => c.id === row.clock_id)?.name ?? row.clock_id
+                : threads.find((t) => t.id === row.thread_id)?.title ?? row.thread_id;
+              return (
+                <tr key={row.id}>
+                  <td>{targetLabel}</td>
+                  <td>
+                    <input
+                      defaultValue={row.how_it_appears}
+                      onBlur={(e) => patchClockLink.mutate({ adventureId, rowId: row.id, how_it_appears: e.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      defaultValue={row.advance_trigger}
+                      onBlur={(e) => patchClockLink.mutate({ adventureId, rowId: row.id, advance_trigger: e.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      defaultValue={row.visible_impact}
+                      onBlur={(e) => patchClockLink.mutate({ adventureId, rowId: row.id, visible_impact: e.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <button onClick={() => deleteClockLink.mutate({ adventureId, rowId: row.id })}>Remove</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div className="adventure-form-picker">
+          <select
+            value={linkTargetType}
+            onChange={(e) => {
+              setLinkTargetType(e.target.value as "clock" | "thread");
+              setLinkTargetId("");
+            }}
+          >
+            <option value="clock">Clock</option>
+            <option value="thread">Thread</option>
+          </select>
+          <select value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)}>
+            <option value="">Select {linkTargetType}…</option>
+            {linkTargetType === "clock"
+              ? clocks.map((clock) => (
+                  <option key={clock.id} value={clock.id}>{clock.name}</option>
+                ))
+              : threads.map((thread) => (
+                  <option key={thread.id} value={thread.id}>{thread.title}</option>
+                ))}
+          </select>
+          <button
+            className="btn-secondary"
+            disabled={!linkTargetId}
+            onClick={() => {
+              createClockLink.mutate(
+                linkTargetType === "clock"
+                  ? { adventureId, clock_id: linkTargetId }
+                  : { adventureId, thread_id: linkTargetId },
+              );
+              setLinkTargetId("");
+            }}
+          >
+            Add Link
+          </button>
+        </div>
       </section>
 
       <section className="adventure-form-section">
@@ -186,11 +351,36 @@ export default function AdventureForm({ adventureId, onBack }: Props) {
           <tbody>
             {adventure.encounters.map((row) => (
               <tr key={row.id}>
-                <td>{row.name}</td>
-                <td>{row.objective}</td>
-                <td>{row.opposition}</td>
-                <td>{row.terrain_constraint}</td>
-                <td>{row.what_changes}</td>
+                <td>
+                  <input
+                    defaultValue={row.name}
+                    onBlur={(e) => patchEncounter.mutate({ adventureId, rowId: row.id, name: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.objective}
+                    onBlur={(e) => patchEncounter.mutate({ adventureId, rowId: row.id, objective: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.opposition}
+                    onBlur={(e) => patchEncounter.mutate({ adventureId, rowId: row.id, opposition: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.terrain_constraint}
+                    onBlur={(e) => patchEncounter.mutate({ adventureId, rowId: row.id, terrain_constraint: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.what_changes}
+                    onBlur={(e) => patchEncounter.mutate({ adventureId, rowId: row.id, what_changes: e.target.value })}
+                  />
+                </td>
                 <td>
                   <button onClick={() => deleteEncounter.mutate({ adventureId, rowId: row.id })}>Remove</button>
                 </td>
@@ -220,11 +410,36 @@ export default function AdventureForm({ adventureId, onBack }: Props) {
           <tbody>
             {adventure.rewards.map((row) => (
               <tr key={row.id}>
-                <td>{row.name}</td>
-                <td>{row.type}</td>
-                <td>{row.who_cares}</td>
-                <td>{row.mechanical_note}</td>
-                <td>{row.future_hook}</td>
+                <td>
+                  <input
+                    defaultValue={row.name}
+                    onBlur={(e) => patchReward.mutate({ adventureId, rowId: row.id, name: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.type}
+                    onBlur={(e) => patchReward.mutate({ adventureId, rowId: row.id, type: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.who_cares}
+                    onBlur={(e) => patchReward.mutate({ adventureId, rowId: row.id, who_cares: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.mechanical_note}
+                    onBlur={(e) => patchReward.mutate({ adventureId, rowId: row.id, mechanical_note: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    defaultValue={row.future_hook}
+                    onBlur={(e) => patchReward.mutate({ adventureId, rowId: row.id, future_hook: e.target.value })}
+                  />
+                </td>
                 <td>
                   <button onClick={() => deleteReward.mutate({ adventureId, rowId: row.id })}>Remove</button>
                 </td>
@@ -248,6 +463,21 @@ export default function AdventureForm({ adventureId, onBack }: Props) {
             }
           />
         </label>
+        {CLUE_MAP_LANES.map((lane) => (
+          <label key={lane}>
+            {lane.replace(/_/g, " ")}
+            <textarea
+              value={((adventure.clue_map[lane] as string[]) || []).join("\n")}
+              placeholder="One clue per line"
+              onChange={(e) =>
+                patchAdventure.mutate({
+                  id: adventureId,
+                  clue_map: { ...adventure.clue_map, [lane]: e.target.value.split("\n") },
+                })
+              }
+            />
+          </label>
+        ))}
       </section>
 
       <details className="adventure-form-collapsible">
