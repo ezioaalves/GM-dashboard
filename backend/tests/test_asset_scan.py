@@ -228,3 +228,133 @@ def test_scan_assets_returns_zeroed_summary_when_assets_dir_missing(tmp_path):
         "scanned": 0, "new": 0, "changed_on_disk": 0, "missing": 0,
         "conflicts": 0, "unchanged": 0, "errors": 0, "review_ids": [],
     }
+
+
+def test_scan_assets_flags_hash_change_as_stale_without_creating_review(tmp_path):
+    path = _write_png(tmp_path, "Lore/Assets/Images/NPCs/scar.png", size=(4, 4))
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            first = scan_assets(tmp_path, cur)
+            review_id = first["review_ids"][0]
+            cur.execute(
+                "UPDATE sync_reviews SET review_status = 'accepted' WHERE id = %s", (review_id,)
+            )
+            cur.execute(
+                """
+                INSERT INTO lore_assets (source_path, source_hash, asset_type, freshness_state)
+                VALUES ('Lore/Assets/Images/NPCs/scar.png',
+                        (SELECT current_version FROM sync_reviews WHERE id = %s),
+                        'image', 'fresh')
+                """,
+                (review_id,),
+            )
+    finally:
+        conn.close()
+
+    from PIL import Image
+
+    Image.new("RGB", (8, 8)).save(path)  # change the bytes on disk
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            second = scan_assets(tmp_path, cur)
+            cur.execute(
+                "SELECT freshness_state FROM lore_assets WHERE source_path = 'Lore/Assets/Images/NPCs/scar.png'"
+            )
+            freshness = cur.fetchone()["freshness_state"]
+            cur.execute("SELECT count(*) AS n FROM sync_reviews WHERE review_type = 'asset_import'")
+            review_count = cur.fetchone()["n"]
+    finally:
+        conn.close()
+
+    assert second["changed_on_disk"] == 1
+    assert second["new"] == 0
+    assert freshness == "stale_source_changed"
+    assert review_count == 1  # no new review created for the change
+
+
+def test_scan_assets_flags_deleted_file_as_missing(tmp_path):
+    path = _write_png(tmp_path, "Lore/Assets/Images/NPCs/scar.png")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO lore_assets (source_path, source_hash, asset_type, freshness_state)
+                VALUES ('Lore/Assets/Images/NPCs/scar.png', %s, 'image', 'fresh')
+                """,
+                (compute_asset_hash(path.read_bytes()),),
+            )
+    finally:
+        conn.close()
+
+    path.unlink()
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_assets(tmp_path, cur)
+            cur.execute(
+                "SELECT freshness_state FROM lore_assets WHERE source_path = 'Lore/Assets/Images/NPCs/scar.png'"
+            )
+            freshness = cur.fetchone()["freshness_state"]
+    finally:
+        conn.close()
+
+    assert summary["missing"] == 1
+    assert freshness == "missing_source"
+
+
+def test_scan_assets_clears_missing_back_to_fresh_when_file_restored(tmp_path):
+    path = _write_png(tmp_path, "Lore/Assets/Images/NPCs/scar.png")
+    original_hash = compute_asset_hash(path.read_bytes())
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO lore_assets (source_path, source_hash, asset_type, freshness_state)
+                VALUES ('Lore/Assets/Images/NPCs/scar.png', %s, 'image', 'missing_source')
+                """,
+                (original_hash,),
+            )
+            # Simulate the file being present again with identical bytes.
+            summary = scan_assets(tmp_path, cur)
+            cur.execute(
+                "SELECT freshness_state FROM lore_assets WHERE source_path = 'Lore/Assets/Images/NPCs/scar.png'"
+            )
+            freshness = cur.fetchone()["freshness_state"]
+    finally:
+        conn.close()
+
+    assert summary["unchanged"] == 1
+    assert freshness == "fresh"
+
+
+def test_scan_assets_dry_run_does_not_mutate_freshness_state(tmp_path):
+    _write_png(tmp_path, "Lore/Assets/Images/NPCs/present.png")
+    # A registered row for a file that no longer exists on disk.
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO lore_assets (source_path, source_hash, asset_type, freshness_state)
+                VALUES ('Lore/Assets/Images/NPCs/gone.png', 'deadbeef', 'image', 'fresh')
+                """
+            )
+            summary = scan_assets(tmp_path, cur, dry_run=True)
+            cur.execute(
+                "SELECT freshness_state FROM lore_assets WHERE source_path = 'Lore/Assets/Images/NPCs/gone.png'"
+            )
+            freshness = cur.fetchone()["freshness_state"]
+    finally:
+        conn.close()
+
+    assert summary["missing"] == 1
+    assert freshness == "fresh"  # dry run must not mutate

@@ -38,6 +38,7 @@ def scan_assets(vault_root: Path, cur, dry_run: bool = False) -> dict:
     unchanged = 0
     errors = 0
     review_ids: list[str] = []
+    seen_paths: set[str] = set()
 
     if not assets_dir.exists():
         return {
@@ -49,6 +50,7 @@ def scan_assets(vault_root: Path, cur, dry_run: bool = False) -> dict:
         if not path.is_file() or path.suffix.lower() not in ASSET_EXTENSIONS:
             continue
         rel_path = str(path.relative_to(vault_root))
+        seen_paths.add(rel_path)
         try:
             data = path.read_bytes()
         except OSError:
@@ -133,10 +135,42 @@ def scan_assets(vault_root: Path, cur, dry_run: bool = False) -> dict:
 
         if existing["source_hash"] == source_hash:
             unchanged += 1
+            if not dry_run and existing["freshness_state"] != "fresh":
+                cur.execute(
+                    """
+                    UPDATE lore_assets
+                    SET freshness_state = 'fresh', last_checked_at = now()
+                    WHERE id = %s
+                    """,
+                    (existing["id"],),
+                )
             continue
 
         changed_on_disk += 1
-        # missing/stale sweep against previously-registered rows is added in Task 4
+        if not dry_run:
+            cur.execute(
+                """
+                UPDATE lore_assets
+                SET freshness_state = 'stale_source_changed', last_checked_at = now()
+                WHERE id = %s
+                """,
+                (existing["id"],),
+            )
+
+    cur.execute("SELECT id, source_path FROM lore_assets")
+    for row in cur.fetchall():
+        if row["source_path"] in seen_paths:
+            continue
+        missing += 1
+        if not dry_run:
+            cur.execute(
+                """
+                UPDATE lore_assets
+                SET freshness_state = 'missing_source', last_checked_at = now()
+                WHERE id = %s
+                """,
+                (row["id"],),
+            )
 
     return {
         "scanned": scanned,
