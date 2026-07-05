@@ -7,6 +7,13 @@ export interface Session {
   status: SessionStatus;
   date: string | null;
   notes: string;
+  promise: string;
+  fit_check: Record<string, unknown>;
+  clue_map: Array<Record<string, unknown>>;
+  wrap_capture: Record<string, unknown>;
+  recap_seed: string;
+  prep_notes: string;
+  wrap_notes: string;
   scene_count: number;
 }
 
@@ -16,6 +23,13 @@ export interface SessionCreate {
   status?: SessionStatus;
   date?: string | null;
   notes?: string;
+  promise?: string;
+  fit_check?: Record<string, unknown>;
+  clue_map?: Array<Record<string, unknown>>;
+  wrap_capture?: Record<string, unknown>;
+  recap_seed?: string;
+  prep_notes?: string;
+  wrap_notes?: string;
 }
 
 export type SessionUpdate = Required<Omit<SessionCreate, never>>;

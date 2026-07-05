@@ -1,7 +1,8 @@
 import os
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
+import psycopg2
+from sqlalchemy import create_engine
 from sqlalchemy import pool
 
 from alembic import context
@@ -57,10 +58,10 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    config.set_main_option("sqlalchemy.url", _get_url())
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    url = _get_url()
+    connectable = create_engine(
+        url,
+        creator=lambda: psycopg2.connect(url),
         poolclass=pool.NullPool,
     )
 

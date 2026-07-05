@@ -87,6 +87,20 @@ def test_create_session():
         "status": "Active",
         "date": "2026-06-27",
         "notes": "Open at the keep gates.",
+        "promise": "Confront the forged seal so court pressure changes.",
+        "fit_check": {"mode": "investigation", "active_clocks": ["seal-cracks"]},
+        "clue_map": [
+            {
+                "tier": "core",
+                "text": "The seal was altered.",
+                "holder": "archive",
+                "found": False,
+            }
+        ],
+        "wrap_capture": {"next_session_hook": "Alarm bells ring."},
+        "recap_seed": "The seal was altered and the archive reacted.",
+        "prep_notes": "Opening pressure at the archive.",
+        "wrap_notes": "Record what the party actually exposed.",
     })
     assert res.status_code == 201
     data = res.json()
@@ -95,6 +109,13 @@ def test_create_session():
     assert data["status"] == "ready"
     assert data["date"] == "2026-06-27"
     assert data["notes"] == "Open at the keep gates."
+    assert data["promise"] == "Confront the forged seal so court pressure changes."
+    assert data["fit_check"]["mode"] == "investigation"
+    assert data["clue_map"][0]["tier"] == "core"
+    assert data["wrap_capture"]["next_session_hook"] == "Alarm bells ring."
+    assert data["recap_seed"] == "The seal was altered and the archive reacted."
+    assert data["prep_notes"] == "Opening pressure at the archive."
+    assert data["wrap_notes"] == "Record what the party actually exposed."
     assert data["scene_count"] == 0
     assert "id" in data
 
@@ -126,6 +147,21 @@ def test_create_session_invalid_status():
     assert res.status_code == 422
 
 
+def test_create_session_rejects_invalid_clue_map_entry():
+    res = client.post("/api/sessions", json={
+        "number": 18,
+        "name": "Bad clue",
+        "clue_map": [
+            {
+                "tier": "rumor",
+                "text": "This should not pass.",
+                "holder": "archive",
+            }
+        ],
+    })
+    assert res.status_code == 422
+
+
 def test_update_session():
     session = seed_session(number=18)
     seed_scene({"session_id": session["id"]})
@@ -135,6 +171,13 @@ def test_update_session():
         "status": "Played",
         "date": "2026-06-28",
         "notes": "Wrapped the council scene.",
+        "promise": "Council pressure changes.",
+        "fit_check": {"mode": "social"},
+        "clue_map": [],
+        "wrap_capture": {"rewards": "favor"},
+        "recap_seed": "The council shifted.",
+        "prep_notes": "Prep.",
+        "wrap_notes": "Wrap.",
     })
     assert res.status_code == 200
     data = res.json()
@@ -143,7 +186,32 @@ def test_update_session():
     assert data["status"] == "played"
     assert data["date"] == "2026-06-28"
     assert data["notes"] == "Wrapped the council scene."
+    assert data["promise"] == "Council pressure changes."
+    assert data["fit_check"] == {"mode": "social"}
+    assert data["wrap_capture"] == {"rewards": "favor"}
+    assert data["recap_seed"] == "The council shifted."
     assert data["scene_count"] == 1
+
+
+def test_wrap_capture_prefills_next_session_recap_seed():
+    session = seed_session(number=18, name="The Gate")
+    next_session = seed_session(number=19, name="Aftermath")
+    res = client.patch(f"/api/sessions/{session['id']}", json={
+        "wrap_capture": {
+            "actual_endpoint": "The alarm bell cracked.",
+            "next_session_hook": "The patrol sees smoke over the archive.",
+            "clock_movement": "Recall Window -1.",
+            "lane_changes": "Mei Lin takes point.",
+        }
+    })
+    assert res.status_code == 200
+
+    next_res = client.get(f"/api/sessions/{next_session['id']}")
+    assert next_res.status_code == 200
+    recap_seed = next_res.json()["recap_seed"]
+    assert "Session 18 wrap bridge" in recap_seed
+    assert "The patrol sees smoke over the archive." in recap_seed
+    assert "Recall Window -1." in recap_seed
 
 
 def test_update_session_not_found():
@@ -179,6 +247,7 @@ def test_delete_session_moves_scenes_to_backlog():
     scene_res = client.get(f"/api/scenes/{scene['id']}")
     assert scene_res.status_code == 200
     assert scene_res.json()["session_id"] is None
+    assert scene_res.json()["placement"] == "backlog"
 
 
 def test_delete_session_not_found():
@@ -280,13 +349,39 @@ def test_list_scenes_empty():
 
 
 def test_create_scene():
-    res = client.post("/api/scenes", json={"title": "Ambush", "type": "Hard", "status": "Draft"})
+    res = client.post("/api/scenes", json={
+        "title": "Ambush",
+        "type": "Hard",
+        "status": "Draft",
+        "cut_or_replace_plan": "If bypassed, move the pressure to the gate.",
+        "planned_notes": "Open with pressure.",
+        "actual_notes": "Players negotiated.",
+    })
     assert res.status_code == 201
     data = res.json()
     assert data["title"] == "Ambush"
     assert data["type"] == "Hard"
+    assert data["scene_type"] == "hard"
     assert data["status"] == "Draft"
+    assert data["cut_or_replace_plan"] == "If bypassed, move the pressure to the gate."
+    assert data["planned_notes"] == "Open with pressure."
+    assert data["actual_notes"] == "Players negotiated."
     assert data["session_id"] is None
+
+
+def test_create_scene_accepts_canonical_scene_type_and_legacy_aliases():
+    res = client.post("/api/scenes", json={
+        "title": "Spare Route",
+        "scene_type": "extra",
+        "status": "Draft",
+        "replacement_route": "Use the messenger if PCs skip court.",
+    })
+    assert res.status_code == 201
+    data = res.json()
+    assert data["scene_type"] == "added"
+    assert data["type"] == "Added"
+    assert data["replacement_route"] == "Use the messenger if PCs skip court."
+    assert data["cut_or_replace_plan"] == "Use the messenger if PCs skip court."
 
 
 def test_create_scene_with_session():
@@ -339,6 +434,7 @@ def test_update_scene():
     data = res.json()
     assert data["title"] == "Updated"
     assert data["status"] == "Ready"
+    assert data["scene_type"] == "soft"
     assert data["location"] == ["East Gate"]
 
 

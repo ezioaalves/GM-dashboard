@@ -65,6 +65,7 @@ const STATUS_OPTIONS = [
   { value: "Ready", label: "Ready" },
   { value: "Played", label: "Played" },
   { value: "Cut", label: "Cut" },
+  { value: "Replaced", label: "Replaced" },
 ];
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -295,8 +296,9 @@ const DEFAULT_SCENE: Partial<Scene> = {
   pc_pressure: "", entry_pressure: "", exit_condition: "", core_clue: "",
   superior_clue: "", optional_clue: "", false_lead: "", opening_image: "",
   sensory_words: "", interactable_objects: "", rules_likely: "",
-  foundry_needs: "", replacement_route: "", if_succeed: "", if_fail: "",
-  if_ignore: "", if_short: "", notes: "", pinned_material: [],
+  foundry_needs: "", replacement_route: "", cut_or_replace_plan: "",
+  if_succeed: "", if_fail: "", if_ignore: "", if_short: "",
+  planned_notes: "", actual_notes: "", notes: "", pinned_material: [],
 };
 
 // ── SceneForm ──────────────────────────────────────────────────────────────────
@@ -546,6 +548,13 @@ export function SceneForm({
             <input value={scene.foundry_needs ?? ""} onChange={setInput("foundry_needs")} placeholder="map, tokens, handout" /></label>
           <label className="field spanAll"><span>Replacement route</span>
             <input value={scene.replacement_route ?? ""} onChange={setInput("replacement_route")} placeholder="If players bypass the prep?" /></label>
+          <label className="field spanAll"><span>Cut or replace plan</span>
+            <textarea
+              value={scene.cut_or_replace_plan ?? ""}
+              onChange={setInput("cut_or_replace_plan")}
+              rows={2}
+              placeholder="What surfaces at the table if this scene is cut or replaced?"
+            /></label>
           <label className="field spanAll"><span>If PCs succeed</span>
             <textarea value={scene.if_succeed ?? ""} onChange={setInput("if_succeed")} rows={1} /></label>
           <label className="field spanAll"><span>If PCs fail</span>
@@ -560,6 +569,20 @@ export function SceneForm({
       {/* Notes */}
       <CollapsibleSection title="Notes" defaultOpen={false}>
         <div className="formGrid">
+          <label className="field spanAll"><span>Planned notes</span>
+            <textarea
+              value={scene.planned_notes ?? ""}
+              onChange={setInput("planned_notes")}
+              rows={2}
+              placeholder="Expected role in the run sheet, planned outcome, or table prompt"
+            /></label>
+          <label className="field spanAll"><span>Actual notes</span>
+            <textarea
+              value={scene.actual_notes ?? ""}
+              onChange={setInput("actual_notes")}
+              rows={2}
+              placeholder="What actually happened, including skipped/cut/replaced result"
+            /></label>
           <label className="field spanAll"><span>Notes</span>
             <textarea value={scene.notes ?? ""} onChange={setInput("notes")} rows={2} /></label>
         </div>

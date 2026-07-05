@@ -4,7 +4,8 @@ export interface Scene {
   id: number;
   title: string;
   type: string;
-  status: "Draft" | "Ready" | "Played" | "Cut";
+  scene_type: "hard" | "soft" | "cut" | "added" | "replacement" | "spotlight" | "bridge";
+  status: "Draft" | "Ready" | "Played" | "Cut" | "Replaced";
   session_id: number | null;
   description: string;
   location: string[];
@@ -25,17 +26,21 @@ export interface Scene {
   rules_likely: string;
   foundry_needs: string;
   replacement_route: string;
+  cut_or_replace_plan: string;
   if_succeed: string;
   if_fail: string;
   if_ignore: string;
   if_short: string;
   notes: string;
+  planned_notes: string;
+  actual_notes: string;
   pinned_material: Array<{ title: string; path: string }>;
 }
 
 export interface SceneCreate {
   title?: string;
   type?: string;
+  scene_type?: "hard" | "soft" | "cut" | "added" | "replacement" | "spotlight" | "bridge";
   status?: string;
   session_id?: number | null;
   description?: string;
@@ -57,11 +62,14 @@ export interface SceneCreate {
   rules_likely?: string;
   foundry_needs?: string;
   replacement_route?: string;
+  cut_or_replace_plan?: string;
   if_succeed?: string;
   if_fail?: string;
   if_ignore?: string;
   if_short?: string;
   notes?: string;
+  planned_notes?: string;
+  actual_notes?: string;
   pinned_material?: Array<{ title: string; path: string }>;
 }
 

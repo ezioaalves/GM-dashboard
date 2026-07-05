@@ -43,8 +43,13 @@ def engine_connection():
         conn.close()
 
 
-# SQLAlchemy engine — used by Alembic env.py and future routers
-engine = create_engine(_db_url())
+def _connect_with_dsn():
+    return psycopg2.connect(_db_url())
+
+
+# SQLAlchemy engine — routes use SQLAlchemy sessions, while the local psycopg2
+# build only connects reliably through a DSN string.
+engine = create_engine(_db_url(), creator=_connect_with_dsn)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 

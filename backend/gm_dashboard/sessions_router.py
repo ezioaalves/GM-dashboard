@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import date as Date
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.exc import IntegrityError
@@ -22,10 +22,43 @@ LEGACY_STATUS_ALIASES = {
     "Played": "played",
 }
 VALID_STATUSES = set(SESSION_STATUSES) | set(LEGACY_STATUS_ALIASES)
+CLUE_TIERS = {"core", "superior", "optional", "false-lead", "back-door"}
 
 
 def normalize_session_status(value: str) -> str:
     return LEGACY_STATUS_ALIASES.get(value, value)
+
+
+class ClueMapEntry(BaseModel):
+    tier: str
+    text: str = ""
+    holder: str = ""
+    location: str = ""
+    found: bool = False
+    scene_ids: list[int] = Field(default_factory=list)
+    notes: str = ""
+
+    @field_validator("tier")
+    @classmethod
+    def validate_tier(cls, v: str) -> str:
+        if v not in CLUE_TIERS:
+            raise ValueError(f"Invalid clue tier: {v}")
+        return v
+
+    @field_validator("scene_ids")
+    @classmethod
+    def validate_scene_ids(cls, v: list[int]) -> list[int]:
+        if any(scene_id < 1 for scene_id in v):
+            raise ValueError("scene_ids must be positive")
+        return v
+
+    @model_validator(mode="after")
+    def validate_content(self) -> "ClueMapEntry":
+        if not self.text.strip():
+            raise ValueError("Clue text is required")
+        if not self.holder.strip() and not self.location.strip():
+            raise ValueError("Clue holder or location is required")
+        return self
 
 
 class SessionCreate(BaseModel):
@@ -34,6 +67,13 @@ class SessionCreate(BaseModel):
     status: str = "Planned"
     date: Optional[Date] = None
     notes: str = ""
+    promise: str = ""
+    fit_check: dict[str, Any] = Field(default_factory=dict)
+    clue_map: list[ClueMapEntry] = Field(default_factory=list)
+    wrap_capture: dict[str, Any] = Field(default_factory=dict)
+    recap_seed: str = ""
+    prep_notes: str = ""
+    wrap_notes: str = ""
 
     @field_validator("number")
     @classmethod
@@ -61,6 +101,11 @@ class SessionPatch(BaseModel):
     date: Optional[Date] = None
     notes: str | None = None
     summary: str | None = None
+    promise: str | None = None
+    fit_check: dict[str, Any] | None = None
+    clue_map: list[ClueMapEntry] | None = None
+    wrap_capture: dict[str, Any] | None = None
+    recap_seed: str | None = None
     prep_notes: str | None = None
     wrap_notes: str | None = None
     source_path: str | None = None
@@ -163,6 +208,11 @@ def _session_to_dict(session: Session, scene_count: int) -> dict:
         "date": session.date.isoformat() if session.date else None,
         "notes": session.notes or "",
         "summary": session.summary or "",
+        "promise": session.promise or "",
+        "fit_check": session.fit_check or {},
+        "clue_map": session.clue_map or [],
+        "wrap_capture": session.wrap_capture or {},
+        "recap_seed": session.recap_seed or "",
         "prep_notes": session.prep_notes or "",
         "wrap_notes": session.wrap_notes or "",
         "source_path": session.source_path or "",
@@ -191,6 +241,49 @@ def _session_detail_to_dict(db: DBSession, session: Session) -> dict:
         "backlog": [_scene_to_summary(scene) for scene in backlog],
     }
     return detail
+
+
+def _serialize_clue_map(clue_map: list[ClueMapEntry | dict[str, Any]]) -> list[dict[str, Any]]:
+    return [entry.model_dump() if isinstance(entry, ClueMapEntry) else entry for entry in clue_map]
+
+
+def _render_wrap_recap_seed(session: Session, wrap_capture: dict[str, Any]) -> str:
+    if not wrap_capture:
+        return ""
+    parts: list[str] = []
+    actual_endpoint = str(wrap_capture.get("actual_endpoint") or "").strip()
+    next_hook = str(wrap_capture.get("next_session_hook") or "").strip()
+    rewards = str(wrap_capture.get("rewards") or "").strip()
+    clock_movement = str(wrap_capture.get("clock_movement") or "").strip()
+    lane_changes = str(wrap_capture.get("lane_changes") or "").strip()
+
+    if actual_endpoint:
+        parts.append(f"Last endpoint: {actual_endpoint}")
+    if next_hook:
+        parts.append(f"Opening hook: {next_hook}")
+    if rewards:
+        parts.append(f"Rewards: {rewards}")
+    if clock_movement:
+        parts.append(f"Clock movement: {clock_movement}")
+    if lane_changes:
+        parts.append(f"Lane changes: {lane_changes}")
+    if not parts:
+        return ""
+    return f"Session {session.number} wrap bridge. " + " ".join(parts)
+
+
+def _prefill_next_session_recap(db: DBSession, session: Session) -> None:
+    seed = _render_wrap_recap_seed(session, session.wrap_capture or {})
+    if not seed:
+        return
+    next_session = (
+        db.query(Session)
+        .filter(Session.number > session.number)
+        .order_by(Session.number.asc())
+        .first()
+    )
+    if next_session and not (next_session.recap_seed or "").strip():
+        next_session.recap_seed = seed
 
 
 def _note_to_dict(note: SessionNote) -> dict:
@@ -336,6 +429,13 @@ def create_session(payload: SessionCreate, db: DBSession = Depends(get_db)) -> d
         status=payload.status,
         date=payload.date,
         notes=payload.notes,
+        promise=payload.promise,
+        fit_check=payload.fit_check,
+        clue_map=_serialize_clue_map(payload.clue_map),
+        wrap_capture=payload.wrap_capture,
+        recap_seed=payload.recap_seed,
+        prep_notes=payload.prep_notes,
+        wrap_notes=payload.wrap_notes,
     )
     db.add(new_session)
     try:
@@ -353,7 +453,11 @@ def patch_session(session_id: int, payload: SessionPatch, db: DBSession = Depend
     session = _get_session_or_404(db, session_id)
     values = payload.model_dump(exclude_unset=True)
     for field, value in values.items():
+        if field == "clue_map":
+            value = _serialize_clue_map(value)
         setattr(session, field, value)
+    if "wrap_capture" in values or values.get("status") == "played":
+        _prefill_next_session_recap(db, session)
 
     try:
         db.commit()
@@ -378,6 +482,14 @@ def update_session(session_id: int, payload: SessionUpdate, db: DBSession = Depe
     session.status = payload.status
     session.date = payload.date
     session.notes = payload.notes
+    session.promise = payload.promise
+    session.fit_check = payload.fit_check
+    session.clue_map = _serialize_clue_map(payload.clue_map)
+    session.wrap_capture = payload.wrap_capture
+    session.recap_seed = payload.recap_seed
+    session.prep_notes = payload.prep_notes
+    session.wrap_notes = payload.wrap_notes
+    _prefill_next_session_recap(db, session)
 
     try:
         db.commit()
@@ -404,6 +516,8 @@ def patch_session_status(
     """
     session = _get_session_or_404(db, session_id)
     session.status = payload.status
+    if payload.status == "played":
+        _prefill_next_session_recap(db, session)
 
     db.commit()
     db.refresh(session)
@@ -462,6 +576,10 @@ def replace_session_scene_order(
 def delete_session(session_id: int, db: DBSession = Depends(get_db)) -> dict:
     """Delete a session."""
     session = _get_session_or_404(db, session_id)
+    for scene in db.query(Scene).filter(Scene.session_id == session.id).all():
+        scene.session_id = None
+        scene.placement = "backlog"
+        scene.sort_order = 0
     db.delete(session)
     db.commit()
     return {"deleted": True}

@@ -12,13 +12,57 @@ from .db.models import Scene
 router = APIRouter()
 
 VALID_TYPES = {"Hard", "Soft", "Cut", "Added", "Replacement", "Spotlight", "Bridge", ""}
-VALID_STATUSES = {"Draft", "Ready", "Played", "Cut"}
+VALID_SCENE_TYPES = {"hard", "soft", "cut", "added", "replacement", "spotlight", "bridge", ""}
+SCENE_TYPE_ALIASES = {
+    "Hard": "hard",
+    "Core": "hard",
+    "Soft": "soft",
+    "Supplemental": "soft",
+    "Cut": "cut",
+    "Added": "added",
+    "Extra": "added",
+    "Replacement": "replacement",
+    "Spotlight": "spotlight",
+    "Bridge": "bridge",
+    "": "",
+}
+VALID_STATUSES = {"Draft", "Ready", "Played", "Cut", "Replaced"}
 VALID_PLACEMENTS = {"ordered", "floating", "backlog"}
+
+
+def normalize_scene_type(value: str) -> str:
+    if value in SCENE_TYPE_ALIASES:
+        return SCENE_TYPE_ALIASES[value]
+    lowered = value.lower()
+    if lowered == "core":
+        return "hard"
+    if lowered == "extra":
+        return "added"
+    return lowered
+
+
+def legacy_type(scene_type: str) -> str:
+    if scene_type == "hard":
+        return "Hard"
+    if scene_type == "soft":
+        return "Soft"
+    if scene_type == "cut":
+        return "Cut"
+    if scene_type == "added":
+        return "Added"
+    if scene_type == "replacement":
+        return "Replacement"
+    if scene_type == "spotlight":
+        return "Spotlight"
+    if scene_type == "bridge":
+        return "Bridge"
+    return ""
 
 
 class SceneCreate(BaseModel):
     title: str = ""
     type: str = ""
+    scene_type: str | None = None
     status: str = "Draft"
     session_id: Optional[int] = None
     placement: str = "backlog"
@@ -42,19 +86,30 @@ class SceneCreate(BaseModel):
     rules_likely: str = ""
     foundry_needs: str = ""
     replacement_route: str = ""
+    cut_or_replace_plan: str = ""
     if_succeed: str = ""
     if_fail: str = ""
     if_ignore: str = ""
     if_short: str = ""
     notes: str = ""
+    planned_notes: str = ""
+    actual_notes: str = ""
     pinned_material: list[dict] = []
 
     @field_validator("type")
     @classmethod
     def validate_type(cls, v: str) -> str:
-        if v not in VALID_TYPES:
+        valid_legacy_or_alias = v in VALID_TYPES or v in VALID_SCENE_TYPES or v in SCENE_TYPE_ALIASES
+        if normalize_scene_type(v) not in VALID_SCENE_TYPES or not valid_legacy_or_alias:
             raise ValueError(f"Invalid type: {v}")
         return v
+
+    @field_validator("scene_type")
+    @classmethod
+    def validate_scene_type(cls, v: str | None) -> str | None:
+        if v is not None and normalize_scene_type(v) not in VALID_SCENE_TYPES:
+            raise ValueError(f"Invalid scene_type: {v}")
+        return normalize_scene_type(v) if v is not None else None
 
     @field_validator("status")
     @classmethod
@@ -89,7 +144,8 @@ def _scene_to_dict(scene: Scene) -> dict:
         "id": scene.id,
         "graph_endpoint_id": scene.graph_endpoint_id or f"scene:{scene.id}",
         "title": scene.title,
-        "type": scene.type,
+        "type": scene.type or legacy_type(scene.scene_type or ""),
+        "scene_type": scene.scene_type or normalize_scene_type(scene.type or "soft") or "soft",
         "status": scene.status,
         "session_id": scene.session_id,
         "placement": scene.placement or "backlog",
@@ -113,11 +169,14 @@ def _scene_to_dict(scene: Scene) -> dict:
         "rules_likely": scene.rules_likely or "",
         "foundry_needs": scene.foundry_needs or "",
         "replacement_route": scene.replacement_route or "",
+        "cut_or_replace_plan": scene.cut_or_replace_plan or scene.replacement_route or "",
         "if_succeed": scene.if_succeed or "",
         "if_fail": scene.if_fail or "",
         "if_ignore": scene.if_ignore or "",
         "if_short": scene.if_short or "",
         "notes": scene.notes or "",
+        "planned_notes": scene.planned_notes or scene.planned_outcome or "",
+        "actual_notes": scene.actual_notes or scene.actual_outcome or "",
         "body": scene.body or "",
         "clues": scene.clues or [],
         "planned_outcome": scene.planned_outcome or "",
@@ -162,9 +221,13 @@ def get_scene(scene_id: int, db: DBSession = Depends(get_db)) -> dict:
 @router.post("/scenes", status_code=201)
 def create_scene(payload: SceneCreate, db: DBSession = Depends(get_db)) -> dict:
     """Create a new scene."""
+    scene_type = payload.scene_type or normalize_scene_type(payload.type or "soft") or "soft"
+    type_value = payload.type if payload.type in VALID_TYPES else legacy_type(scene_type)
+    cut_or_replace_plan = payload.cut_or_replace_plan or payload.replacement_route
     new_scene = Scene(
         title=payload.title,
-        type=payload.type,
+        type=type_value,
+        scene_type=scene_type,
         status=payload.status,
         session_id=payload.session_id,
         placement=payload.placement if payload.session_id is not None else "backlog",
@@ -188,11 +251,14 @@ def create_scene(payload: SceneCreate, db: DBSession = Depends(get_db)) -> dict:
         rules_likely=payload.rules_likely,
         foundry_needs=payload.foundry_needs,
         replacement_route=payload.replacement_route,
+        cut_or_replace_plan=cut_or_replace_plan,
         if_succeed=payload.if_succeed,
         if_fail=payload.if_fail,
         if_ignore=payload.if_ignore,
         if_short=payload.if_short,
         notes=payload.notes,
+        planned_notes=payload.planned_notes,
+        actual_notes=payload.actual_notes,
         pinned_material=payload.pinned_material,
     )
     db.add(new_scene)
@@ -207,9 +273,13 @@ def update_scene(scene_id: int, payload: SceneCreate, db: DBSession = Depends(ge
     scene = db.query(Scene).filter(Scene.id == scene_id).first()
     if not scene:
         raise HTTPException(status_code=404, detail=f"Scene {scene_id} not found")
+    scene_type = payload.scene_type or normalize_scene_type(payload.type or scene.scene_type or "soft") or "soft"
+    type_value = payload.type if payload.type in VALID_TYPES else legacy_type(scene_type)
+    cut_or_replace_plan = payload.cut_or_replace_plan or payload.replacement_route
 
     scene.title = payload.title
-    scene.type = payload.type
+    scene.type = type_value
+    scene.scene_type = scene_type
     scene.status = payload.status
     scene.session_id = payload.session_id
     scene.placement = payload.placement if payload.session_id is not None else "backlog"
@@ -233,11 +303,14 @@ def update_scene(scene_id: int, payload: SceneCreate, db: DBSession = Depends(ge
     scene.rules_likely = payload.rules_likely
     scene.foundry_needs = payload.foundry_needs
     scene.replacement_route = payload.replacement_route
+    scene.cut_or_replace_plan = cut_or_replace_plan
     scene.if_succeed = payload.if_succeed
     scene.if_fail = payload.if_fail
     scene.if_ignore = payload.if_ignore
     scene.if_short = payload.if_short
     scene.notes = payload.notes
+    scene.planned_notes = payload.planned_notes
+    scene.actual_notes = payload.actual_notes
     scene.pinned_material = payload.pinned_material
 
     db.commit()

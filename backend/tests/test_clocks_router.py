@@ -132,7 +132,7 @@ class TestThreadClockDataMigration:
         # Replay migration 016 against the seeded thread so the data-migration
         # path (including INSERT INTO lore_relationships with source_type='clock')
         # actually executes.
-        _alembic("downgrade", "-1")
+        _alembic("downgrade", "015")
         _alembic("upgrade", "head")
 
         conn = _connect()
