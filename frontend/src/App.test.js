@@ -77,5 +77,11 @@ assert.match(css, /\.thread-next-move/);
 assert.match(css, /\.thread-edit-form/);
 assert.match(css, /\.thread-layout/);
 assert.doesNotMatch(css, /letter-spacing:\s*-/);
+const adventureDeck = fs.readFileSync(path.join("frontend", "src", "adventures", "AdventureDeck.tsx"), "utf8");
+const adventureCard = fs.readFileSync(path.join("frontend", "src", "adventures", "AdventureCard.tsx"), "utf8");
+
+assert.match(adventureDeck, /New Adventure/);
+assert.match(adventureDeck, /Browse adventures by status/);
+assert.match(adventureCard, /adventure-card-title/);
 
 console.log("frontend static cockpit checks passed");
