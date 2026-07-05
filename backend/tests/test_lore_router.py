@@ -398,3 +398,63 @@ def test_scan_lore_vault_marks_job_failed_when_scan_raises(tmp_path, monkeypatch
     assert row["error_code"] == "scan_error"
     assert row["error_message"] == "scan exploded"
     assert row["finished_at"] is not None
+
+
+# ---- assets/import/scan ----------------------------------------------------
+
+
+def test_scan_assets_import_dry_run_reports_summary_without_writing_reviews(tmp_path, monkeypatch):
+    from PIL import Image
+
+    img_dir = tmp_path / "Lore" / "Assets" / "Images" / "NPCs"
+    img_dir.mkdir(parents=True)
+    Image.new("RGB", (4, 4)).save(img_dir / "scar.png")
+    monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
+
+    res = client.post("/api/assets/import/scan?dry_run=true")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["scanned"] == 1
+    assert body["new"] == 1
+    assert body["review_ids"] == []
+    assert "sync_job_id" not in body
+
+    listed = client.get("/api/sync/reviews?review_type=asset_import")
+    assert listed.json() == []
+
+
+def test_scan_assets_import_creates_job_and_reviews(tmp_path, monkeypatch):
+    from PIL import Image
+
+    img_dir = tmp_path / "Lore" / "Assets" / "Images" / "NPCs"
+    img_dir.mkdir(parents=True)
+    Image.new("RGB", (4, 4)).save(img_dir / "scar.png")
+    monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
+
+    res = client.post("/api/assets/import/scan")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["new"] == 1
+    assert len(body["review_ids"]) == 1
+    assert body["sync_job_id"]
+
+    job = client.get(f"/api/sync/jobs/{body['sync_job_id']}")
+    assert job.status_code == 200
+    assert job.json()["status"] == "succeeded"
+    assert job.json()["job_type"] == "asset_scan"
+
+    review = client.get(f"/api/sync/reviews/{body['review_ids'][0]}")
+    assert review.status_code == 200
+    assert review.json()["review_type"] == "asset_import"
+
+    decided = client.patch(f"/api/sync/reviews/{body['review_ids'][0]}", json={"review_status": "accepted"})
+    assert decided.status_code == 200
+
+    applied = client.post(
+        f"/api/assets/import/{body['review_ids'][0]}/apply", json={"confirmation": True}
+    )
+    assert applied.status_code == 200
+    assert applied.json()["applied"] is True
+
+    assets = client.get("/api/assets")
+    assert [row["source_path"] for row in assets.json()] == ["Lore/Assets/Images/NPCs/scar.png"]

@@ -23,6 +23,7 @@ from .system_enums import (
     VISIBILITIES,
 )
 from . import services
+from .asset_scan import scan_assets
 from .lore_scan import scan_vault
 
 router = APIRouter()
@@ -1185,6 +1186,71 @@ def scan_lore_vault(dry_run: bool = False) -> dict:
             return {**summary, "sync_job_id": job_id}
     finally:
         conn.close()
+
+
+@router.post("/assets/import/scan")
+def scan_assets_import(dry_run: bool = False) -> dict:
+    vault_root = services.find_vault_root()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if dry_run:
+                return scan_assets(vault_root, cur, dry_run=True)
+
+            cur.execute(
+                """
+                INSERT INTO sync_jobs (
+                  target, direction, status, diff, job_type,
+                  source_surface, target_surface, started_at, updated_at
+                )
+                VALUES (
+                  'assets:vault', 'vault_to_postgres', 'running', '', 'asset_scan',
+                  'vault', 'postgres', now(), now()
+                )
+                RETURNING id
+                """
+            )
+            job_id = str(cur.fetchone()["id"])
+
+            try:
+                summary = scan_assets(vault_root, cur, dry_run=False)
+            except Exception as exc:
+                error_message = str(exc)
+                cur.execute(
+                    """
+                    UPDATE sync_jobs
+                    SET status = 'failed',
+                        error = %(error)s,
+                        error_code = 'scan_error',
+                        error_message = %(error)s,
+                        finished_at = now(),
+                        updated_at = now()
+                    WHERE id = %(id)s
+                    """,
+                    {"id": job_id, "error": error_message},
+                )
+                raise
+
+            cur.execute(
+                """
+                UPDATE sync_jobs
+                SET status = 'succeeded',
+                    result = %(result)s,
+                    result_payload = %(result)s,
+                    finished_at = now(),
+                    updated_at = now()
+                WHERE id = %(id)s
+                """,
+                {"id": job_id, "result": psycopg2.extras.Json(summary)},
+            )
+            return {**summary, "sync_job_id": job_id}
+    finally:
+        conn.close()
+
+
+@router.post("/assets/import/{review_id}/apply")
+def apply_asset_import_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
+    return apply_sync_review(review_id, payload)
 
 
 @router.patch("/relationships/{relationship_id}")
