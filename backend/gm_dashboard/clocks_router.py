@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
 from .clock_engine import ConditionError, EngineError, fire_manual_tick, validate_condition
-from .db.get_db import get_connection
+from .db.get_db import engine_connection, get_connection
 from .system_enums import CLOCK_KINDS, CLOCK_LIFECYCLES, GRAPH_ENDPOINT_TYPES
 
 router = APIRouter()
@@ -285,13 +285,13 @@ def update_lifecycle(clock_id: UUID, payload: LifecycleUpdate) -> dict:
 
 @router.post("/clocks/{clock_id}/ticks")
 def tick_clock(clock_id: UUID, payload: TickRequest) -> dict:
-    conn = get_connection()
-    try:
-        return fire_manual_tick(conn, str(clock_id), payload.delta, payload.reason)
-    except EngineError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    finally:
-        conn.close()
+    # Engine fires need a real transaction (FOR UPDATE lock held across the
+    # whole fire; atomic rollback on failure) — not autocommit get_connection().
+    with engine_connection() as conn:
+        try:
+            return fire_manual_tick(conn, str(clock_id), payload.delta, payload.reason)
+        except EngineError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/clocks/{clock_id}/ticks")

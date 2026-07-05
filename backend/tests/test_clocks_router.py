@@ -509,3 +509,55 @@ class TestLinks:
         resp = client.post(f"/api/clocks/{cid}/links",
                            json={"target_endpoint": "widget:nope", "relationship_type": "tracks"})
         assert resp.status_code == 422
+
+
+class TestTickRouteAtomicity:
+    def test_failed_fire_rolls_back_all_writes(self, monkeypatch):
+        import gm_dashboard.clock_engine as engine
+
+        trigger = client.post(
+            "/api/clocks", json={"name": "Trig", "kind": "progress", "segments": 4}
+        ).json()
+        target = client.post(
+            "/api/clocks", json={"name": "Targ", "kind": "progress", "segments": 4}
+        ).json()
+        conn = _connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO cascade_rules
+                  (name, title, trigger_kind, trigger_clock_id, trigger_event, effects)
+                VALUES ('atomicity-rule', 'Atomicity', 'clock_event', %s, 'ticked', %s)
+                """,
+                (
+                    trigger["id"],
+                    psycopg2.extras.Json(
+                        [{"clock_id": target["id"], "delta": 1, "reason_template": "cascade"}]
+                    ),
+                ),
+            )
+        conn.close()
+
+        real_write = engine._write_fire_result
+
+        def exploding_write(cur, fire_id, result):
+            real_write(cur, fire_id, result)  # rows written inside the transaction
+            raise RuntimeError("boom: injected mid-fire failure")
+
+        monkeypatch.setattr(engine, "_write_fire_result", exploding_write)
+
+        crashy_client = TestClient(app, raise_server_exceptions=False)
+        resp = crashy_client.post(
+            f"/api/clocks/{trigger['id']}/ticks", json={"delta": 1, "reason": "tick"}
+        )
+        assert resp.status_code == 500
+
+        conn = _connect()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT count(*) AS n FROM clock_ticks")
+            assert cur.fetchone()["n"] == 0
+            cur.execute("SELECT filled FROM clocks WHERE id = %s", (trigger["id"],))
+            assert cur.fetchone()["filled"] == 0
+            cur.execute("SELECT filled FROM clocks WHERE id = %s", (target["id"],))
+            assert cur.fetchone()["filled"] == 0
+        conn.close()
