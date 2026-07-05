@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 import psycopg2.extras
 from sqlalchemy import or_
+from sqlalchemy import text as sql_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
@@ -335,9 +336,40 @@ def _relationship_to_dict(relationship: LoreRelationship) -> dict:
     }
 
 
+def _linked_clocks(db: DBSession, thread: Thread) -> list[dict]:
+    endpoint = thread.graph_endpoint_id or f"thread:{thread.id}"
+    rows = db.execute(
+        sql_text(
+            """
+            SELECT c.id, c.name, c.kind, c.segments, c.filled, c.lifecycle, c.origin
+            FROM lore_relationships lr
+            JOIN clocks c ON c.graph_endpoint_id = lr.source_id
+            WHERE lr.source_type = 'clock' AND lr.target_id = :endpoint
+            ORDER BY c.created_at
+            """
+        ),
+        {"endpoint": endpoint},
+    ).mappings().all()
+    out = []
+    for row in rows:
+        divergence = False
+        if row["origin"] == "thread_migration" and thread.clock_label:
+            divergence = (
+                (thread.clock_value or 0) != row["filled"]
+                or (thread.clock_max or 0) != row["segments"]
+            )
+        out.append({
+            "id": str(row["id"]), "name": row["name"], "kind": row["kind"],
+            "segments": row["segments"], "filled": row["filled"],
+            "lifecycle": row["lifecycle"], "legacy_divergence": divergence,
+        })
+    return out
+
+
 def _thread_detail_to_dict(db: DBSession, thread: Thread) -> dict:
     detail = _thread_to_dict(thread)
     thread_endpoint = detail["graph_endpoint_id"]
+    detail["linked_clocks"] = _linked_clocks(db, thread)
     relationships = (
         db.query(LoreRelationship)
         .filter(

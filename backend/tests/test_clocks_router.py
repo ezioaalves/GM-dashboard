@@ -690,3 +690,33 @@ class TestCascadeRoutes:
         out = resp.json()
         assert out["title"] == "Patched"
         assert out["effects"] == [{"clock_id": b, "delta": -2, "reason_template": "y"}]
+
+
+class TestThreadIntegration:
+    def test_thread_detail_includes_linked_clock_and_divergence(self):
+        conn = _connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO threads (id, title, status, priority,
+                                     clock_label, clock_value, clock_max)
+                VALUES ('th-linked', 'Linked Thread', 'active', 'med', 'Pressure', 2, 6)
+                """
+            )
+        conn.close()
+        cid = client.post("/api/clocks", json={"name": "Pressure", "kind": "progress",
+                                               "segments": 6}).json()["id"]
+        conn = _connect()
+        with conn.cursor() as cur:
+            cur.execute("UPDATE clocks SET origin = 'thread_migration', filled = 2 WHERE id = %s", (cid,))
+        conn.close()
+        client.post(f"/api/clocks/{cid}/links",
+                    json={"target_endpoint": "thread:th-linked", "relationship_type": "tracks"})
+
+        detail = client.get("/api/threads/th-linked").json()
+        assert detail["linked_clocks"][0]["name"] == "Pressure"
+        assert detail["linked_clocks"][0]["legacy_divergence"] is False
+
+        client.post(f"/api/clocks/{cid}/ticks", json={"delta": 1, "reason": "escalation"})
+        detail = client.get("/api/threads/th-linked").json()
+        assert detail["linked_clocks"][0]["legacy_divergence"] is True
