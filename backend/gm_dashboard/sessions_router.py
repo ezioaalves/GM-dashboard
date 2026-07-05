@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.exc import IntegrityError
 
 from .db.get_db import get_db
-from .db.models import Session, Scene, SessionNote
+from .db.models import Session, Scene, SessionNote, SessionAdventure, Adventure
 from .services import slugify
 from .system_enums import FRESHNESS_STATES, REVIEW_STATUSES, SESSION_STATUSES, VISIBILITIES
 
@@ -198,7 +198,7 @@ def _scene_to_summary(scene: Scene) -> dict:
     }
 
 
-def _session_to_dict(session: Session, scene_count: int) -> dict:
+def _session_to_dict(session: Session, scene_count: int, adventures: list[dict] | None = None) -> dict:
     return {
         "id": session.id,
         "graph_endpoint_id": session.graph_endpoint_id or f"session:{session.id}",
@@ -221,11 +221,23 @@ def _session_to_dict(session: Session, scene_count: int) -> dict:
         "freshness_state": session.freshness_state or "unknown",
         "review_status": session.review_status or "accepted",
         "scene_count": scene_count,
+        "adventures": adventures or [],
     }
 
 
+def _session_adventures(db: DBSession, session_id: int) -> list[dict]:
+    rows = (
+        db.query(Adventure)
+        .join(SessionAdventure, SessionAdventure.adventure_id == Adventure.id)
+        .filter(SessionAdventure.session_id == session_id)
+        .order_by(Adventure.id.asc())
+        .all()
+    )
+    return [{"id": a.id, "title": a.title} for a in rows]
+
+
 def _session_detail_to_dict(db: DBSession, session: Session) -> dict:
-    detail = _session_to_dict(session, len(session.scenes or []))
+    detail = _session_to_dict(session, len(session.scenes or []), _session_adventures(db, session.id))
     scenes = (
         db.query(Scene)
         .filter(Scene.session_id == session.id)

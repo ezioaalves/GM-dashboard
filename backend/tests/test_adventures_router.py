@@ -272,3 +272,76 @@ def test_clock_links_crud_requires_clock_or_thread():
 
     res = client.delete(f"/api/adventures/{adventure['id']}/clock-links/{link['id']}")
     assert res.status_code == 200
+
+
+def seed_session(number=1, name="Test Session"):
+    conn = _connect()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "INSERT INTO sessions (number, name, status) VALUES (%s, %s, %s) RETURNING id, number, name",
+            (number, name, "planned"),
+        )
+        row = dict(cur.fetchone())
+    conn.close()
+    return row
+
+
+def test_link_and_unlink_session():
+    adventure = client.post("/api/adventures", json={"title": "Linked Adventure"}).json()
+    session = seed_session()
+
+    res = client.post(f"/api/adventures/{adventure['id']}/sessions/{session['id']}")
+    assert res.status_code == 200
+    detail = client.get(f"/api/adventures/{adventure['id']}").json()
+    assert detail["sessions"] == [{"id": session["id"], "title": session["name"]}]
+
+    res = client.get(f"/api/sessions/{session['id']}")
+    assert res.status_code == 200
+    assert res.json()["adventures"] == [{"id": adventure["id"], "title": adventure["title"]}]
+
+    res = client.delete(f"/api/adventures/{adventure['id']}/sessions/{session['id']}")
+    assert res.status_code == 200
+    detail = client.get(f"/api/adventures/{adventure['id']}").json()
+    assert detail["sessions"] == []
+
+
+def test_link_session_many_to_many():
+    adventure_a = client.post("/api/adventures", json={"title": "Adventure A"}).json()
+    adventure_b = client.post("/api/adventures", json={"title": "Adventure B"}).json()
+    session = seed_session(number=2, name="Shared Session")
+
+    client.post(f"/api/adventures/{adventure_a['id']}/sessions/{session['id']}")
+    client.post(f"/api/adventures/{adventure_b['id']}/sessions/{session['id']}")
+
+    res = client.get(f"/api/sessions/{session['id']}")
+    titles = {a["title"] for a in res.json()["adventures"]}
+    assert titles == {"Adventure A", "Adventure B"}
+
+
+def test_apply_six_beat_spine_preset():
+    adventure = client.post("/api/adventures", json={"title": "Spine Test"}).json()
+    res = client.post(f"/api/adventures/{adventure['id']}/apply-spine-preset", json={"preset": "six_beat"})
+    assert res.status_code == 200
+    labels = [beat["label"] for beat in res.json()["spine"]]
+    assert labels == [
+        "Inciting incident", "First pressure", "Complication",
+        "Revelation", "Climax", "Consequence",
+    ]
+    assert all(beat["text"] == "" for beat in res.json()["spine"])
+
+
+def test_apply_five_room_spine_preset():
+    adventure = client.post("/api/adventures", json={"title": "Dungeon Test"}).json()
+    res = client.post(f"/api/adventures/{adventure['id']}/apply-spine-preset", json={"preset": "five_room"})
+    assert res.status_code == 200
+    labels = [beat["label"] for beat in res.json()["spine"]]
+    assert labels == [
+        "Entrance and Guardian", "Puzzle or Roleplaying Challenge", "Trick or Setback",
+        "Climax, Big Battle or Conflict", "Reward, Revelation, Plot Twist",
+    ]
+
+
+def test_apply_spine_preset_invalid_name():
+    adventure = client.post("/api/adventures", json={"title": "Bad Preset"}).json()
+    res = client.post(f"/api/adventures/{adventure['id']}/apply-spine-preset", json={"preset": "nonsense"})
+    assert res.status_code == 422

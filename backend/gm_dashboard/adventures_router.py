@@ -23,6 +23,17 @@ router = APIRouter()
 
 VALID_ADVENTURE_STATUSES = {"draft", "ready", "played", "archived"}
 
+SPINE_PRESETS: dict[str, list[str]] = {
+    "six_beat": [
+        "Inciting incident", "First pressure", "Complication",
+        "Revelation", "Climax", "Consequence",
+    ],
+    "five_room": [
+        "Entrance and Guardian", "Puzzle or Roleplaying Challenge", "Trick or Setback",
+        "Climax, Big Battle or Conflict", "Reward, Revelation, Plot Twist",
+    ],
+}
+
 
 class AdventureCreate(BaseModel):
     title: str = ""
@@ -192,11 +203,29 @@ class ClockLinkPatch(BaseModel):
     visible_impact: str | None = None
 
 
+class SpinePresetRequest(BaseModel):
+    preset: str
+
+    @field_validator("preset")
+    @classmethod
+    def preset_valid(cls, v: str) -> str:
+        if v not in SPINE_PRESETS:
+            raise ValueError(f"preset must be one of {sorted(SPINE_PRESETS)}")
+        return v
+
+
 def _get_adventure_or_404(db: DBSession, adventure_id: int) -> Adventure:
     adventure = db.query(Adventure).filter(Adventure.id == adventure_id).first()
     if not adventure:
         raise HTTPException(status_code=404, detail=f"Adventure {adventure_id} not found")
     return adventure
+
+
+def _get_session_or_404(db: DBSession, session_id: int) -> Session:
+    session = db.query(Session).filter(Session.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    return session
 
 
 def _adventure_summary(adventure: Adventure, session_count: int = 0) -> dict:
@@ -494,3 +523,42 @@ def delete_clock_link(adventure_id: int, link_id: int, db: DBSession = Depends(g
     db.delete(row)
     db.commit()
     return {"deleted": True}
+
+
+@router.post("/adventures/{adventure_id}/sessions/{session_id}")
+def link_session(adventure_id: int, session_id: int, db: DBSession = Depends(get_db)) -> dict:
+    _get_adventure_or_404(db, adventure_id)
+    _get_session_or_404(db, session_id)
+    existing = (
+        db.query(SessionAdventure)
+        .filter(
+            SessionAdventure.adventure_id == adventure_id,
+            SessionAdventure.session_id == session_id,
+        )
+        .first()
+    )
+    if not existing:
+        db.add(SessionAdventure(adventure_id=adventure_id, session_id=session_id))
+        db.commit()
+    return {"linked": True}
+
+
+@router.delete("/adventures/{adventure_id}/sessions/{session_id}")
+def unlink_session(adventure_id: int, session_id: int, db: DBSession = Depends(get_db)) -> dict:
+    _get_adventure_or_404(db, adventure_id)
+    _get_session_or_404(db, session_id)
+    db.query(SessionAdventure).filter(
+        SessionAdventure.adventure_id == adventure_id,
+        SessionAdventure.session_id == session_id,
+    ).delete()
+    db.commit()
+    return {"unlinked": True}
+
+
+@router.post("/adventures/{adventure_id}/apply-spine-preset")
+def apply_spine_preset(adventure_id: int, payload: SpinePresetRequest, db: DBSession = Depends(get_db)) -> dict:
+    adventure = _get_adventure_or_404(db, adventure_id)
+    adventure.spine = [{"label": label, "text": ""} for label in SPINE_PRESETS[payload.preset]]
+    db.commit()
+    db.refresh(adventure)
+    return _adventure_summary(adventure)
