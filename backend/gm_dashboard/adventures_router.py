@@ -17,6 +17,7 @@ from .db.models import (
     Session,
     SessionAdventure,
 )
+from .system_enums import FRESHNESS_STATES, REVIEW_STATUSES, VISIBILITIES
 
 router = APIRouter()
 
@@ -73,6 +74,27 @@ class AdventurePatch(BaseModel):
     def validate_status(cls, v: str | None) -> str | None:
         if v is not None and v not in VALID_ADVENTURE_STATUSES:
             raise ValueError(f"Invalid status: {v}")
+        return v
+
+    @field_validator("visibility")
+    @classmethod
+    def validate_visibility(cls, v: str | None) -> str | None:
+        if v is not None and v not in VISIBILITIES:
+            raise ValueError(f"Invalid visibility: {v}")
+        return v
+
+    @field_validator("freshness_state")
+    @classmethod
+    def validate_freshness_state(cls, v: str | None) -> str | None:
+        if v is not None and v not in FRESHNESS_STATES:
+            raise ValueError(f"Invalid freshness_state: {v}")
+        return v
+
+    @field_validator("review_status")
+    @classmethod
+    def validate_review_status(cls, v: str | None) -> str | None:
+        if v is not None and v not in REVIEW_STATUSES:
+            raise ValueError(f"Invalid review_status: {v}")
         return v
 
 
@@ -171,8 +193,20 @@ def _adventure_detail(db: DBSession, adventure: Adventure) -> dict:
 
 
 @router.get("/adventures")
-def list_adventures(db: DBSession = Depends(get_db)) -> list[dict]:
-    adventures = db.query(Adventure).order_by(Adventure.id.desc()).all()
+def list_adventures(status: str | None = None, db: DBSession = Depends(get_db)) -> list[dict]:
+    """
+    List all adventures, optionally filtered by status.
+
+    Query params:
+      status: (optional) Filter to adventures with this status
+    """
+    if status is not None and status not in VALID_ADVENTURE_STATUSES:
+        raise HTTPException(status_code=422, detail=f"Invalid status: {status}")
+
+    query = db.query(Adventure)
+    if status is not None:
+        query = query.filter(Adventure.status == status)
+    adventures = query.order_by(Adventure.id.desc()).all()
     result = []
     for adventure in adventures:
         session_count = (

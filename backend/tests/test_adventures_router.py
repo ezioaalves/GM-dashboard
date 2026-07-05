@@ -140,3 +140,38 @@ def test_delete_adventure():
     assert res.status_code == 200
     assert res.json() == {"deleted": True}
     assert client.get(f"/api/adventures/{create['id']}").status_code == 404
+
+
+def test_patch_adventure_rejects_invalid_visibility():
+    create = client.post("/api/adventures", json={"title": "Bad Visibility"}).json()
+    res = client.patch(f"/api/adventures/{create['id']}", json={"visibility": "bogus"})
+    assert res.status_code == 422
+
+
+def test_patch_adventure_rejects_invalid_freshness_state():
+    create = client.post("/api/adventures", json={"title": "Bad Freshness"}).json()
+    res = client.patch(f"/api/adventures/{create['id']}", json={"freshness_state": "bogus"})
+    assert res.status_code == 422
+
+
+def test_patch_adventure_rejects_invalid_review_status():
+    create = client.post("/api/adventures", json={"title": "Bad Review"}).json()
+    res = client.patch(f"/api/adventures/{create['id']}", json={"review_status": "bogus"})
+    assert res.status_code == 422
+
+
+def test_list_adventures_filters_by_status():
+    draft = client.post("/api/adventures", json={"title": "Draft One"}).json()
+    ready = client.post("/api/adventures", json={"title": "Ready One"}).json()
+    client.patch(f"/api/adventures/{ready['id']}", json={"status": "ready"})
+
+    res = client.get("/api/adventures", params={"status": "ready"})
+    assert res.status_code == 200
+    ids = [a["id"] for a in res.json()]
+    assert ready["id"] in ids
+    assert draft["id"] not in ids
+
+
+def test_list_adventures_rejects_invalid_status():
+    res = client.get("/api/adventures", params={"status": "bogus"})
+    assert res.status_code == 422
