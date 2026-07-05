@@ -51,6 +51,7 @@ class FakeRelay:
 
     def __init__(self):
         self.clock_list: dict[str, dict] = {}
+        self.fail_update = False
 
     def search(self, query: str) -> list[dict]:
         return [{"uuid": self.setting_uuid, "documentType": "Setting"}]
@@ -61,6 +62,8 @@ class FakeRelay:
 
     def update(self, uuid: str, data: dict) -> dict:
         assert uuid == self.setting_uuid
+        if self.fail_update:
+            raise RelayError("fake relay failure")
         self.clock_list = json.loads(data["value"])
         return {"ok": True}
 
@@ -108,6 +111,29 @@ def _apply(review_id: str) -> dict:
     res = client.post(f"/api/sync/reviews/{review_id}/apply", json={"confirmation": True})
     assert res.status_code == 200, res.text
     return res.json()
+
+
+def _mirror_clock(clock_id: str, env: str = "test") -> str:
+    created = client.post(f"/api/clocks/{clock_id}/mirror", json={"env": env})
+    assert created.status_code == 200, created.text
+    _accept(created.json()["id"])
+    return _apply(created.json()["id"])["foundry_clock_id"]
+
+
+def _clock_push_jobs() -> list[dict]:
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT * FROM sync_jobs
+                WHERE job_type = 'clock_push'
+                ORDER BY created_at, id
+                """
+            )
+            return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
 
 
 class TestRelayClient:
@@ -274,3 +300,99 @@ class TestClockWorksMirror:
         assert drift.status_code == 200, drift.text
         assert drift.json()["verdicts"] == [{"clock_id": clock_id, "kind": "missing_mirror"}]
         assert _clock(clock_id)["mirror_state"] == "missing_mirror"
+
+    def test_tick_on_mirrored_clock_enqueues_push(self, clean_db, fake_relay):
+        clock_id = _insert_clock(filled=2)
+        foundry_id = _mirror_clock(clock_id)
+
+        tick = client.post(
+            f"/api/clocks/{clock_id}/ticks",
+            json={"delta": 1, "reason": "Mirror push smoke"},
+        )
+        assert tick.status_code == 200, tick.text
+        assert fake_relay.clock_list[foundry_id]["value"] == 3
+
+        jobs = _clock_push_jobs()
+        assert len(jobs) == 1
+        assert jobs[0]["status"] == "succeeded"
+        assert jobs[0]["target"] == f"clock:{clock_id}:test"
+        assert _clock(clock_id)["last_mirrored_at"] is not None
+
+    def test_tick_on_unmirrored_clock_no_job(self, clean_db, fake_relay):
+        clock_id = _insert_clock()
+        tick = client.post(
+            f"/api/clocks/{clock_id}/ticks",
+            json={"delta": 1, "reason": "No mirror"},
+        )
+        assert tick.status_code == 200, tick.text
+        assert _clock_push_jobs() == []
+
+    def test_push_failure_sets_failed_state(self, clean_db, fake_relay):
+        clock_id = _insert_clock(filled=2)
+        foundry_id = _mirror_clock(clock_id)
+        fake_relay.fail_update = True
+
+        tick = client.post(
+            f"/api/clocks/{clock_id}/ticks",
+            json={"delta": 1, "reason": "Relay fails"},
+        )
+        assert tick.status_code == 200, tick.text
+        assert _clock(clock_id)["filled"] == 3
+        assert _clock(clock_id)["mirror_state"] == "failed"
+        assert fake_relay.clock_list[foundry_id]["value"] == 2
+
+        jobs = _clock_push_jobs()
+        assert len(jobs) == 1
+        assert jobs[0]["status"] == "failed"
+        assert jobs[0]["error_code"] == "clock_push_failed"
+        assert "fake relay failure" in jobs[0]["error_message"]
+
+    def test_cascade_pushes_each_mirrored_clock_once(self, clean_db, fake_relay):
+        first_id = _insert_clock("First", filled=1)
+        second_id = _insert_clock("Second", filled=1)
+        first_foundry_id = _mirror_clock(first_id)
+        second_foundry_id = _mirror_clock(second_id)
+
+        rule = client.post(
+            "/api/cascades",
+            json={
+                "name": "mirror-cascade",
+                "title": "Mirror Cascade",
+                "trigger_kind": "manual",
+                "condition": {},
+                "effects": [
+                    {"clock_id": first_id, "delta": 1, "reason_template": "{rule_title}"},
+                    {"clock_id": second_id, "delta": 2, "reason_template": "{rule_title}"},
+                ],
+                "enabled": True,
+            },
+        )
+        assert rule.status_code == 200, rule.text
+        fired = client.post(
+            f"/api/cascades/{rule.json()['id']}/fire",
+            json={"dry_run": False, "trigger_note": ""},
+        )
+        assert fired.status_code == 200, fired.text
+
+        assert fake_relay.clock_list[first_foundry_id]["value"] == 2
+        assert fake_relay.clock_list[second_foundry_id]["value"] == 3
+        jobs = _clock_push_jobs()
+        assert len(jobs) == 2
+        assert {job["target"] for job in jobs} == {
+            f"clock:{first_id}:test",
+            f"clock:{second_id}:test",
+        }
+
+    def test_lifecycle_change_pushes_final_value(self, clean_db, fake_relay):
+        clock_id = _insert_clock(filled=2)
+        foundry_id = _mirror_clock(clock_id)
+
+        res = client.patch(
+            f"/api/clocks/{clock_id}/lifecycle",
+            json={"lifecycle": "resolved", "resolution": "Done"},
+        )
+        assert res.status_code == 200, res.text
+        assert fake_relay.clock_list[foundry_id]["value"] == 2
+        jobs = _clock_push_jobs()
+        assert len(jobs) == 1
+        assert jobs[0]["status"] == "succeeded"

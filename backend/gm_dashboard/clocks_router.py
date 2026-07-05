@@ -12,6 +12,7 @@ from .clock_engine import (
     EngineError,
     fire_manual_tick,
     fire_rule,
+    push_mirrors_for_clocks,
     validate_condition,
 )
 from .db.get_db import engine_connection, get_connection
@@ -486,6 +487,7 @@ def update_lifecycle(clock_id: UUID, payload: LifecycleUpdate) -> dict:
                     (payload.lifecycle, payload.resolution, str(clock_id)),
                 )
             out = _row_to_clock(dict(cur.fetchone()))
+            push_mirrors_for_clocks(conn, {str(clock_id)})
             conn.commit()
             return out
     except Exception:

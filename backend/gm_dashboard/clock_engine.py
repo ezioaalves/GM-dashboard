@@ -304,6 +304,110 @@ def _write_fire_result(cur, fire_id: str, result: FireResult) -> None:
         )
 
 
+def _insert_push_job(cur, clock: dict, env: str) -> str:
+    cur.execute(
+        """
+        INSERT INTO sync_jobs (
+          target, direction, status, diff, job_type,
+          source_surface, target_surface, payload, input_payload,
+          started_at, updated_at
+        )
+        VALUES (
+          %(target)s, 'postgres_to_foundry', 'running', '', 'clock_push',
+          'postgres', %(target_surface)s, %(payload)s, %(payload)s, now(), now()
+        )
+        RETURNING id
+        """,
+        {
+            "target": f"clock:{clock['id']}:{env}",
+            "target_surface": f"foundry_{env}",
+            "payload": psycopg2.extras.Json({"clock_id": str(clock["id"]), "env": env}),
+        },
+    )
+    return str(cur.fetchone()["id"])
+
+
+def _complete_push_job(cur, job_id: str, entry: dict) -> None:
+    cur.execute(
+        """
+        UPDATE sync_jobs
+        SET status = 'succeeded',
+            result = %(result)s,
+            result_payload = %(result)s,
+            finished_at = now(),
+            updated_at = now()
+        WHERE id = %(id)s
+        """,
+        {"id": job_id, "result": psycopg2.extras.Json({"entry": entry})},
+    )
+
+
+def _fail_push_job(cur, job_id: str, error: str) -> None:
+    cur.execute(
+        """
+        UPDATE sync_jobs
+        SET status = 'failed',
+            error = %(error)s,
+            error_code = 'clock_push_failed',
+            error_message = %(error)s,
+            finished_at = now(),
+            updated_at = now()
+        WHERE id = %(id)s
+        """,
+        {"id": job_id, "error": error},
+    )
+
+
+def push_mirrors_for_clocks(conn, clock_ids: set[str]) -> None:
+    if not clock_ids:
+        return
+    from . import clockworks_mirror
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT * FROM clocks
+            WHERE id::text = ANY(%s)
+              AND (foundry_clock_id_test <> '' OR foundry_clock_id_prod <> '')
+              AND mirror_state <> 'not_mirrored'
+            """,
+            (list(clock_ids),),
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+        for clock in rows:
+            for env in ("test", "prod"):
+                foundry_id = clock[f"foundry_clock_id_{env}"]
+                if not foundry_id:
+                    continue
+                job_id = _insert_push_job(cur, clock, env)
+                try:
+                    client = clockworks_mirror.load_relay_client(env)
+                    entry = clockworks_mirror.render_clockworks_entry(clock, foundry_id)
+                    clockworks_mirror.push_entry(client, entry)
+                    cur.execute(
+                        """
+                        UPDATE clocks
+                        SET last_mirrored_at = now(),
+                            mirror_state = 'mirrored',
+                            freshness_state = 'fresh',
+                            updated_at = now()
+                        WHERE id = %s
+                        """,
+                        (clock["id"],),
+                    )
+                    _complete_push_job(cur, job_id, entry)
+                except Exception as exc:
+                    cur.execute(
+                        "UPDATE clocks SET mirror_state = 'failed', updated_at = now() WHERE id = %s",
+                        (clock["id"],),
+                    )
+                    _fail_push_job(cur, job_id, str(exc))
+
+
+def _push_mirrors_after_fire(conn, fire_result: dict) -> None:
+    push_mirrors_for_clocks(conn, {tick["clock_id"] for tick in fire_result["applied"]})
+
+
 def _result_payload(fire_id: str, result: FireResult, dry_run: bool) -> dict:
     return {
         "trigger_fire_id": fire_id,
@@ -345,8 +449,10 @@ def _run_fire(conn, initial_effects: list[Effect], dry_run: bool,
                 conn.rollback()  # release FOR UPDATE locks
                 return _result_payload(fire_id, result, True)
             _write_fire_result(cur, fire_id, result)
+        payload = _result_payload(fire_id, result, False)
+        _push_mirrors_after_fire(conn, payload)
         conn.commit()
-        return _result_payload(fire_id, result, False)
+        return payload
     except Exception:
         conn.rollback()
         raise
