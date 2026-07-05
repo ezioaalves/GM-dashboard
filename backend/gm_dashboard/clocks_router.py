@@ -7,9 +7,21 @@ import psycopg2.extras
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
-from .clock_engine import ConditionError, EngineError, fire_manual_tick, validate_condition
+from .clock_engine import (
+    ConditionError,
+    EngineError,
+    fire_manual_tick,
+    fire_rule,
+    validate_condition,
+)
 from .db.get_db import engine_connection, get_connection
-from .system_enums import CLOCK_KINDS, CLOCK_LIFECYCLES, GRAPH_ENDPOINT_TYPES
+from .system_enums import (
+    CASCADE_TRIGGER_KINDS,
+    CLOCK_EVENTS,
+    CLOCK_KINDS,
+    CLOCK_LIFECYCLES,
+    GRAPH_ENDPOINT_TYPES,
+)
 
 router = APIRouter()
 
@@ -376,3 +388,210 @@ def delete_clock_link(clock_id: UUID, rel_id: UUID) -> dict:
         raise
     finally:
         conn.close()
+
+
+class CascadeRuleCreate(BaseModel):
+    name: str
+    title: str = ""
+    description: str = ""
+    trigger_kind: str = "manual"
+    trigger_clock_id: str | None = None
+    trigger_event: str | None = None
+    condition: dict = {}
+    effects: list[dict]
+    enabled: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def name_slug(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name is required")
+        return v.strip()
+
+    @field_validator("trigger_kind")
+    @classmethod
+    def trigger_kind_valid(cls, v: str) -> str:
+        if v not in CASCADE_TRIGGER_KINDS:
+            raise ValueError(f"trigger_kind must be one of {sorted(CASCADE_TRIGGER_KINDS)}")
+        return v
+
+    @field_validator("effects")
+    @classmethod
+    def effects_shape(cls, v: list[dict]) -> list[dict]:
+        if not v:
+            raise ValueError("at least one effect is required")
+        for effect in v:
+            if not effect.get("clock_id"):
+                raise ValueError("every effect needs a clock_id")
+            delta = effect.get("delta")
+            if not isinstance(delta, int) or delta == 0:
+                raise ValueError("every effect needs a non-zero integer delta")
+        return v
+
+
+class CascadeRuleUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    trigger_kind: str | None = None
+    trigger_clock_id: str | None = None
+    trigger_event: str | None = None
+    condition: dict | None = None
+    effects: list[dict] | None = None
+    enabled: bool | None = None
+
+
+class FireRequest(BaseModel):
+    dry_run: bool = False
+    trigger_note: str = ""
+
+
+def _validate_rule_semantics(cur, data: dict) -> None:
+    if data.get("trigger_kind") == "clock_event":
+        if not data.get("trigger_clock_id") or data.get("trigger_event") not in CLOCK_EVENTS:
+            raise HTTPException(
+                status_code=422,
+                detail="clock_event rules need trigger_clock_id and a valid trigger_event",
+            )
+    try:
+        validate_condition(data.get("condition") or {})
+    except ConditionError as exc:
+        raise HTTPException(status_code=422, detail=f"condition: {exc}") from exc
+    clock_ids = {str(e["clock_id"]) for e in data.get("effects") or []}
+    if data.get("trigger_clock_id"):
+        clock_ids.add(str(data["trigger_clock_id"]))
+    if clock_ids:
+        cur.execute("SELECT id::text FROM clocks WHERE id::text = ANY(%s)", (list(clock_ids),))
+        found = {r["id"] for r in cur.fetchall()}
+        missing = clock_ids - found
+        if missing:
+            raise HTTPException(status_code=422, detail=f"unknown clock ids: {sorted(missing)}")
+
+
+def _rule_out(row: dict) -> dict:
+    out = dict(row)
+    for key in ("id", "trigger_clock_id"):
+        if out.get(key) is not None:
+            out[key] = str(out[key])
+    for key in ("created_at", "updated_at"):
+        out[key] = out[key].isoformat()
+    return out
+
+
+@router.get("/cascades")
+def list_cascades() -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM cascade_rules ORDER BY name")
+            return [_rule_out(dict(r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+@router.post("/cascades")
+def create_cascade(payload: CascadeRuleCreate) -> dict:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            _validate_rule_semantics(cur, payload.model_dump())
+            cur.execute(
+                """
+                INSERT INTO cascade_rules
+                  (name, title, description, trigger_kind, trigger_clock_id,
+                   trigger_event, condition, effects, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (payload.name, payload.title, payload.description, payload.trigger_kind,
+                 payload.trigger_clock_id, payload.trigger_event,
+                 psycopg2.extras.Json(payload.condition),
+                 psycopg2.extras.Json(payload.effects), payload.enabled),
+            )
+            out = _rule_out(dict(cur.fetchone()))
+            conn.commit()
+            return out
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.get("/cascades/{rule_id}")
+def get_cascade(rule_id: UUID) -> dict:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM cascade_rules WHERE id = %s", (str(rule_id),))
+            row = cur.fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Cascade rule not found")
+            return _rule_out(dict(row))
+    finally:
+        conn.close()
+
+
+@router.patch("/cascades/{rule_id}")
+def update_cascade(rule_id: UUID, payload: CascadeRuleUpdate) -> dict:
+    updates = payload.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=422, detail="no fields to update")
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM cascade_rules WHERE id = %s", (str(rule_id),))
+            row = cur.fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Cascade rule not found")
+            merged = {**dict(row), **updates}
+            _validate_rule_semantics(cur, merged)
+            sets, params = [], {}
+            for key, value in updates.items():
+                if key in ("condition", "effects"):
+                    value = psycopg2.extras.Json(value)
+                sets.append(f"{key} = %({key})s")
+                params[key] = value
+            params["id"] = str(rule_id)
+            cur.execute(
+                f"UPDATE cascade_rules SET {', '.join(sets)}, updated_at = now() "
+                "WHERE id = %(id)s RETURNING *",
+                params,
+            )
+            out = _rule_out(dict(cur.fetchone()))
+            conn.commit()
+            return out
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.delete("/cascades/{rule_id}")
+def delete_cascade(rule_id: UUID) -> dict:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("DELETE FROM cascade_rules WHERE id = %s RETURNING id", (str(rule_id),))
+            if cur.fetchone() is None:
+                raise HTTPException(status_code=404, detail="Cascade rule not found")
+            conn.commit()
+            return {"deleted": True}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/cascades/{rule_id}/fire")
+def fire_cascade(rule_id: UUID, payload: FireRequest) -> dict:
+    # Engine fires need a real transaction (atomic cascade rollback + FOR UPDATE
+    # locks) — never the autocommit get_connection(). Same helper as the tick route.
+    with engine_connection() as conn:
+        try:
+            return fire_rule(conn, str(rule_id), trigger_note=payload.trigger_note,
+                             dry_run=payload.dry_run)
+        except EngineError as exc:
+            status = 422 if "manual" in str(exc) or "condition" in str(exc) else 409
+            raise HTTPException(status_code=status, detail=str(exc)) from exc

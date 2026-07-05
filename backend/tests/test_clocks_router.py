@@ -561,3 +561,88 @@ class TestTickRouteAtomicity:
             cur.execute("SELECT filled FROM clocks WHERE id = %s", (target["id"],))
             assert cur.fetchone()["filled"] == 0
         conn.close()
+
+
+class TestCascadeRoutes:
+    def _mk_clocks(self):
+        a = client.post("/api/clocks", json={"name": "Corruption", "kind": "progress", "segments": 8}).json()
+        b = client.post("/api/clocks", json={"name": "Trade", "kind": "countdown", "segments": 8}).json()
+        return a["id"], b["id"]
+
+    def test_create_and_list_rule(self):
+        a, b = self._mk_clocks()
+        resp = client.post("/api/cascades", json={
+            "name": "failed-patrol", "title": "Failed Patrol",
+            "trigger_kind": "manual",
+            "effects": [
+                {"clock_id": a, "delta": 1, "reason_template": "Failed patrol"},
+                {"clock_id": b, "delta": -1, "reason_template": "Failed patrol"},
+            ],
+        })
+        assert resp.status_code == 200
+        rules = client.get("/api/cascades").json()
+        assert [r["name"] for r in rules] == ["failed-patrol"]
+
+    def test_condition_validated_on_save(self):
+        a, _ = self._mk_clocks()
+        resp = client.post("/api/cascades", json={
+            "name": "bad-cond", "trigger_kind": "manual",
+            "condition": {"clock": a, "op": "between", "value": 2},
+            "effects": [{"clock_id": a, "delta": 1, "reason_template": "x"}],
+        })
+        assert resp.status_code == 422
+
+    def test_clock_event_rule_requires_clock_and_event(self):
+        a, _ = self._mk_clocks()
+        resp = client.post("/api/cascades", json={
+            "name": "no-event", "trigger_kind": "clock_event",
+            "effects": [{"clock_id": a, "delta": 1, "reason_template": "x"}],
+        })
+        assert resp.status_code == 422
+
+    def test_effects_must_reference_existing_clocks(self):
+        resp = client.post("/api/cascades", json={
+            "name": "ghost", "trigger_kind": "manual",
+            "effects": [{"clock_id": "00000000-0000-0000-0000-000000000000",
+                         "delta": 1, "reason_template": "x"}],
+        })
+        assert resp.status_code == 422
+
+    def test_fire_dry_run_then_apply(self):
+        a, b = self._mk_clocks()
+        rid = client.post("/api/cascades", json={
+            "name": "failed-patrol-2", "title": "Failed Patrol",
+            "trigger_kind": "manual",
+            "effects": [
+                {"clock_id": a, "delta": 1, "reason_template": "Failed patrol ({trigger_note})"},
+                {"clock_id": b, "delta": -1, "reason_template": "Failed patrol ({trigger_note})"},
+            ],
+        }).json()["id"]
+        preview = client.post(f"/api/cascades/{rid}/fire",
+                              json={"dry_run": True, "trigger_note": "s12"}).json()
+        assert preview["dry_run"] is True and len(preview["applied"]) == 2
+        assert client.get(f"/api/clocks/{a}").json()["filled"] == 0  # nothing written
+        applied = client.post(f"/api/cascades/{rid}/fire",
+                              json={"dry_run": False, "trigger_note": "s12"}).json()
+        assert applied["dry_run"] is False
+        assert client.get(f"/api/clocks/{a}").json()["filled"] == 1
+        assert client.get(f"/api/clocks/{b}").json()["filled"] == 7
+
+    def test_fire_clock_event_rule_directly_422(self):
+        a, _ = self._mk_clocks()
+        rid = client.post("/api/cascades", json={
+            "name": "evt", "trigger_kind": "clock_event",
+            "trigger_clock_id": a, "trigger_event": "filled",
+            "effects": [{"clock_id": a, "delta": 1, "reason_template": "x"}],
+        }).json()["id"]
+        resp = client.post(f"/api/cascades/{rid}/fire", json={"dry_run": False})
+        assert resp.status_code == 422
+
+    def test_delete_rule(self):
+        a, _ = self._mk_clocks()
+        rid = client.post("/api/cascades", json={
+            "name": "temp", "trigger_kind": "manual",
+            "effects": [{"clock_id": a, "delta": 1, "reason_template": "x"}],
+        }).json()["id"]
+        assert client.delete(f"/api/cascades/{rid}").status_code == 200
+        assert client.get("/api/cascades").json() == []
