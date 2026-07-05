@@ -86,5 +86,13 @@ assert.match(adventureCard, /adventure-card-title/);
 const generatorPanel = fs.readFileSync(path.join("frontend", "src", "adventures", "GeneratorPanel.tsx"), "utf8");
 assert.match(generatorPanel, /Roll/);
 assert.match(generatorPanel, /Copy into Encounters row/);
+const adventureForm = fs.readFileSync(path.join("frontend", "src", "adventures", "AdventureForm.tsx"), "utf8");
+assert.match(adventureForm, /Apply 6-Beat Spine/);
+assert.match(adventureForm, /Apply 5-Room Dungeon/);
+assert.match(adventureForm, /Roll from Generator/);
+assert.match(adventureForm, /PC Lane Pressure/);
+assert.match(adventureForm, /Rewards And Costs/);
+assert.match(adventureForm, /Clue Map/);
+assert.match(adventureForm, /Foundry Needs/);
 
 console.log("frontend static cockpit checks passed");
