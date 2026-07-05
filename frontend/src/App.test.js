@@ -95,4 +95,10 @@ assert.match(adventureForm, /Rewards And Costs/);
 assert.match(adventureForm, /Clue Map/);
 assert.match(adventureForm, /Foundry Needs/);
 
+assert.match(sidebar, /Adventures/);
+assert.match(app, /AdventureDeck/);
+assert.match(app, /activeTool === "adventure-deck"/);
+assert.match(sessionForm, /useAdventuresQuery/);
+assert.match(sessionForm, /Link an adventure/);
+
 console.log("frontend static cockpit checks passed");

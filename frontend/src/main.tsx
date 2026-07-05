@@ -5,6 +5,7 @@ import { Link, Search, ShieldCheck, X } from "lucide-react";
 import KanbanBoard from "./tickets/KanbanBoard";
 import SceneDeck from "./scenes/SceneDeck";
 import SessionDeck from "./sessions/SessionDeck";
+import AdventureDeck from "./adventures/AdventureDeck";
 import SessionNote from "./SessionNote";
 import ThreadDirectionDashboard from "./threads/ThreadDirectionDashboard";
 import ClocksPage from "./clocks/ClocksPage";
@@ -159,6 +160,7 @@ function App() {
               runAction={runAction}
             />
           )}
+          {activeTool === "adventure-deck" && <AdventureDeck />}
           {activeTool === "threads" && (
             <ThreadDirectionDashboard
               onStatusChange={setStatus}

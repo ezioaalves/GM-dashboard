@@ -15,6 +15,7 @@ export interface Session {
   prep_notes: string;
   wrap_notes: string;
   scene_count: number;
+  adventures: Array<{ id: number; title: string }>;
 }
 
 export interface SessionCreate {

@@ -1,7 +1,8 @@
-import { CalendarDays, GitBranch, LayoutGrid, Search, FileDiff, Link, Timer } from "lucide-react";
+import { CalendarDays, GitBranch, LayoutGrid, Search, FileDiff, Link, Timer, BookOpen } from "lucide-react";
 
 const TOOLS = [
   { key: "session-deck", label: "Session Deck", icon: CalendarDays },
+  { key: "adventure-deck", label: "Adventures", icon: BookOpen },
   { key: "scene-deck", label: "Scene Deck", icon: LayoutGrid },
   { key: "threads", label: "Thread Direction", icon: GitBranch },
   { key: "clocks", label: "Clocks", icon: Timer },

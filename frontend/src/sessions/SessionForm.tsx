@@ -3,6 +3,7 @@ import { ChevronDown, Plus, Save, Trash } from "lucide-react";
 import CustomSelect from "../components/CustomSelect";
 import { useScenesQuery } from "../api/scenes";
 import { useClocksQuery } from "../api/clocks";
+import { useAdventuresQuery, useLinkSession, useUnlinkSession } from "../api/adventures";
 import { SessionNoteEditor } from "./SessionNoteEditor";
 import type { Session, SessionNote, SessionStatus } from "../types/session";
 
@@ -295,6 +296,42 @@ function TagPicker({ value, onChange, suggestions, placeholder }: TagPickerProps
   );
 }
 
+function SessionAdventureLinks({ sessionId, linkedAdventures }: { sessionId: number; linkedAdventures: Array<{ id: number; title: string }> }) {
+  const { data: allAdventures = [] } = useAdventuresQuery();
+  const linkSession = useLinkSession();
+  const unlinkSession = useUnlinkSession();
+  const linkedIds = new Set(linkedAdventures.map((a) => a.id));
+  const available = allAdventures.filter((a) => !linkedIds.has(a.id));
+
+  return (
+    <div className="session-adventure-links">
+      <h4>Adventures</h4>
+      <ul>
+        {linkedAdventures.map((a) => (
+          <li key={a.id}>
+            {a.title}
+            <button onClick={() => unlinkSession.mutate({ adventureId: a.id, sessionId })}>Unlink</button>
+          </li>
+        ))}
+      </ul>
+      {available.length > 0 && (
+        <select
+          value=""
+          onChange={(e) => {
+            const adventureId = Number(e.target.value);
+            if (adventureId) linkSession.mutate({ adventureId, sessionId });
+          }}
+        >
+          <option value="">Link an adventure…</option>
+          {available.map((a) => (
+            <option key={a.id} value={a.id}>{a.title}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 export function SessionForm({ session: initialSession, onSave, onDelete, runAction, onStatusChange }: SessionFormProps) {
   const [session, setSession] = useState<FormSession>({
     ...DEFAULT_SESSION,
@@ -418,6 +455,10 @@ export function SessionForm({ session: initialSession, onSave, onDelete, runActi
           <input type="date" value={session.date || ""} onChange={setInput("date")} />
         </label>
       </div>
+
+      {session.id && (
+        <SessionAdventureLinks sessionId={session.id} linkedAdventures={initialSession.adventures ?? []} />
+      )}
 
       <CollapsibleSection title="Session Prep" defaultOpen={false}>
         <div className="formGrid">
