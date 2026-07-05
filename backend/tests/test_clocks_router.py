@@ -421,3 +421,91 @@ class TestEngineDB:
         assert len(result["applied"]) == 1
         assert seen["evaluated_with"] is seen["loaded"]
         assert _clock_row(target)["filled"] == 1
+
+
+class TestClockCrud:
+    def test_create_progress_starts_empty_countdown_starts_full(self):
+        prog = client.post("/api/clocks", json={"name": "Discovery", "kind": "progress", "segments": 6}).json()
+        count = client.post("/api/clocks", json={"name": "Recall", "kind": "countdown", "segments": 8}).json()
+        assert prog["filled"] == 0
+        assert count["filled"] == 8
+
+    def test_create_validates(self):
+        assert client.post("/api/clocks", json={"name": "", "kind": "progress", "segments": 6}).status_code == 422
+        assert client.post("/api/clocks", json={"name": "x", "kind": "timer", "segments": 6}).status_code == 422
+        assert client.post("/api/clocks", json={"name": "x", "kind": "progress", "segments": 0}).status_code == 422
+
+    def test_list_filters_by_lifecycle_and_kind(self):
+        client.post("/api/clocks", json={"name": "A", "kind": "progress", "segments": 4})
+        rid = client.post("/api/clocks", json={"name": "B", "kind": "countdown", "segments": 4}).json()["id"]
+        client.patch(f"/api/clocks/{rid}/lifecycle", json={"lifecycle": "resolved", "resolution": "done"})
+        active = client.get("/api/clocks", params={"lifecycle": "active"}).json()
+        assert [c["name"] for c in active] == ["A"]
+        countdowns = client.get("/api/clocks", params={"kind": "countdown"}).json()
+        assert [c["name"] for c in countdowns] == ["B"]
+
+    def test_patch_segments_reclamps_filled(self):
+        cid = client.post("/api/clocks", json={"name": "C", "kind": "progress", "segments": 8}).json()["id"]
+        conn = _connect()
+        with conn.cursor() as cur:
+            cur.execute("UPDATE clocks SET filled = 7 WHERE id = %s", (cid,))
+        conn.close()
+        resp = client.patch(f"/api/clocks/{cid}", json={"segments": 4}).json()
+        assert resp["segments"] == 4 and resp["filled"] == 4
+
+    def test_lifecycle_resolve_and_reactivate(self):
+        cid = client.post("/api/clocks", json={"name": "D", "kind": "progress", "segments": 4}).json()["id"]
+        done = client.patch(f"/api/clocks/{cid}/lifecycle",
+                            json={"lifecycle": "resolved", "resolution": "objective reached"}).json()
+        assert done["lifecycle"] == "resolved" and done["resolved_at"] is not None
+        back = client.patch(f"/api/clocks/{cid}/lifecycle", json={"lifecycle": "active"}).json()
+        assert back["lifecycle"] == "active" and back["resolved_at"] is None
+
+
+class TestTickRoutes:
+    def test_tick_and_history(self):
+        cid = client.post("/api/clocks", json={"name": "Recall", "kind": "countdown", "segments": 8}).json()["id"]
+        r1 = client.post(f"/api/clocks/{cid}/ticks", json={"delta": -1, "reason": "End of watch"})
+        r2 = client.post(f"/api/clocks/{cid}/ticks", json={"delta": -1, "reason": "Hazard: taint pocket"})
+        assert r1.status_code == 200 and r2.status_code == 200
+        history = client.get(f"/api/clocks/{cid}/ticks").json()
+        assert [t["reason"] for t in history] == ["Hazard: taint pocket", "End of watch"]
+
+    def test_tick_requires_reason(self):
+        cid = client.post("/api/clocks", json={"name": "E", "kind": "progress", "segments": 4}).json()["id"]
+        assert client.post(f"/api/clocks/{cid}/ticks", json={"delta": 1, "reason": ""}).status_code == 422
+
+    def test_tick_on_resolved_clock_409(self):
+        cid = client.post("/api/clocks", json={"name": "F", "kind": "progress", "segments": 4}).json()["id"]
+        client.patch(f"/api/clocks/{cid}/lifecycle", json={"lifecycle": "resolved", "resolution": "x"})
+        assert client.post(f"/api/clocks/{cid}/ticks", json={"delta": 1, "reason": "y"}).status_code == 409
+
+
+class TestLinks:
+    def test_link_clock_to_thread_and_detail_shows_it(self):
+        conn = _connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO threads (id, title, status, priority)
+                VALUES ('th-clock-test', 'Clock Thread', 'active', 'med')
+                """
+            )
+        conn.close()
+        cid = client.post("/api/clocks", json={"name": "G", "kind": "progress", "segments": 4}).json()["id"]
+        resp = client.post(
+            f"/api/clocks/{cid}/links",
+            json={"target_endpoint": "thread:th-clock-test", "relationship_type": "tracks"},
+        )
+        assert resp.status_code == 200
+        detail = client.get(f"/api/clocks/{cid}").json()
+        assert detail["links"][0]["target_id"] == "thread:th-clock-test"
+        rel_id = detail["links"][0]["id"]
+        assert client.delete(f"/api/clocks/{cid}/links/{rel_id}").status_code == 200
+        assert client.get(f"/api/clocks/{cid}").json()["links"] == []
+
+    def test_link_rejects_bad_endpoint_prefix(self):
+        cid = client.post("/api/clocks", json={"name": "H", "kind": "progress", "segments": 4}).json()["id"]
+        resp = client.post(f"/api/clocks/{cid}/links",
+                           json={"target_endpoint": "widget:nope", "relationship_type": "tracks"})
+        assert resp.status_code == 422
