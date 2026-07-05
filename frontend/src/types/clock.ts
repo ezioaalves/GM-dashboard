@@ -166,11 +166,10 @@ export interface DriftVerdict {
   fields?: Record<string, { engine: unknown; foundry: unknown }>;
 }
 
-// --- Mirror / drift (Tasks 9-10, not yet implemented server-side) ---
-// Shapes below are speculative: derived from the design plan
-// (docs/superpowers/plans/2026-07-04-gm-dashboard-clock-engine.md, Task 9,
-// "Add mirror + drift routes to clocks_router.py") rather than verified
-// against shipped code. Re-verify once Tasks 9-10 land.
+// --- Mirror / drift ---
+// Review-gated Clock-Works mirror payloads. Local backend tests cover these
+// shapes with a fake relay; live Foundry acceptance still requires a refreshed
+// test-world API key.
 
 export interface MirrorRequest {
   env: "test" | "prod";

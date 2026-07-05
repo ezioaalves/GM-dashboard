@@ -203,10 +203,9 @@ export function useFireCascade() {
   });
 }
 
-// --- Mirror / drift: Tasks 9-10 have not shipped these routes yet.
-// (`POST /api/clocks/{id}/mirror`, `GET /api/clocks/mirror/drift`). Hooks are
-// written now per the plan's fixed contract; they cannot be exercised until
-// clockworks_mirror.py + the corresponding router routes land.
+// --- Mirror / drift: review-gated Clock-Works routes. Real relay acceptance
+// still depends on a valid Foundry test-world API key, but the local mocked
+// backend contract is implemented and covered by backend tests.
 
 export function useMirrorClock() {
   const qc = useQueryClient();
