@@ -718,6 +718,35 @@ def list_sync_reviews(
         conn.close()
 
 
+@router.get("/sync/reviews/grouped")
+def list_grouped_sync_reviews() -> dict:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, review_type, source_surface, target_surface, target_type, target_id,
+                       base_version, current_version, conflict_flags, review_status,
+                       created_at, updated_at, decided_at, applied_at
+                FROM sync_reviews
+                WHERE review_status IN ('pending', 'conflict', 'stale')
+                ORDER BY target_type ASC, created_at DESC
+                """
+            )
+            rows = [_json(dict(row)) for row in cur.fetchall()]
+            groups: dict[str, list[dict]] = {}
+            for row in rows:
+                groups.setdefault(row["target_type"], []).append(row)
+            return {
+                "groups": [
+                    {"target_type": target_type, "count": len(reviews), "reviews": reviews}
+                    for target_type, reviews in sorted(groups.items())
+                ]
+            }
+    finally:
+        conn.close()
+
+
 @router.get("/sync/reviews/{review_id}")
 def get_sync_review(review_id: UUID) -> dict:
     conn = get_connection()

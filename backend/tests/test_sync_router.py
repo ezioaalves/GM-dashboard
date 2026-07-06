@@ -637,3 +637,26 @@ def test_apply_npc_import_merges_stats_and_preserves_unrefreshed_keys():
             cur.execute("DELETE FROM npcs WHERE id = %s", (npc_id,))
     finally:
         conn.close()
+
+
+def test_grouped_reviews_buckets_by_target_type():
+    _seed_review(review_type="ticket_import", target_type="ticket", review_status="pending")
+    _seed_review(review_type="thread_import", target_type="thread", review_status="conflict")
+    _seed_review(review_type="npc_import", target_type="npc", review_status="stale")
+    _seed_review(review_type="ticket_import", target_type="ticket", review_status="accepted")
+
+    res = client.get("/api/sync/reviews/grouped")
+    assert res.status_code == 200
+    body = res.json()
+    by_type = {g["target_type"]: g for g in body["groups"]}
+    assert set(by_type) == {"ticket", "thread", "npc"}
+    assert by_type["ticket"]["count"] == 1
+    assert by_type["thread"]["count"] == 1
+    assert by_type["npc"]["count"] == 1
+    assert by_type["ticket"]["reviews"][0]["review_type"] == "ticket_import"
+
+
+def test_grouped_reviews_empty_when_nothing_pending():
+    res = client.get("/api/sync/reviews/grouped")
+    assert res.status_code == 200
+    assert res.json()["groups"] == []
