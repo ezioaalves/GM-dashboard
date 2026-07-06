@@ -660,3 +660,25 @@ def test_grouped_reviews_empty_when_nothing_pending():
     res = client.get("/api/sync/reviews/grouped")
     assert res.status_code == 200
     assert res.json()["groups"] == []
+
+
+def test_sync_freshness_items_carry_priority():
+    _seed_review(review_type="vault_import", target_type="entity", review_status="conflict")
+    _seed_review(review_type="thread_import", target_type="thread", review_status="pending")
+
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO sync_jobs (target, direction, status) VALUES ('npc:priority-test', 'foundry_to_postgres', 'failed')"
+            )
+    finally:
+        conn.close()
+
+    res = client.get("/api/sync/freshness")
+    assert res.status_code == 200
+    items = res.json()["items"]
+    by_kind_and_state = {(item["kind"], item["state"]): item["priority"] for item in items}
+    assert by_kind_and_state[("review", "conflict")] == "high"
+    assert by_kind_and_state[("review", "pending")] == "normal"
+    assert by_kind_and_state[("job", "failed")] == "high"

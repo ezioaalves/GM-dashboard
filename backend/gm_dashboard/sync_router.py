@@ -847,6 +847,7 @@ def sync_freshness() -> dict:
                     "target_type": row["target_type"],
                     "target_id": row["target_id"],
                     "state": row["review_status"],
+                    "priority": "high" if row["review_status"] in ("conflict", "failed") else "normal",
                     "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
                 }
                 for row in cur.fetchall()
@@ -868,6 +869,7 @@ def sync_freshness() -> dict:
                     "job_type": row["job_type"],
                     "target": row["target"],
                     "state": row["status"],
+                    "priority": "high" if row["status"] in ("conflict", "failed") else "normal",
                     "error_code": row["error_code"] or "",
                     "error_message": row["error_message"] or "",
                     "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
