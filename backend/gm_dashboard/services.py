@@ -316,7 +316,6 @@ def cockpit_session(vault: Path | None = None) -> dict[str, Any]:
     return {
         "latest_session": latest,
         "leave_off": columns["now"][0],
-        "freshness": freshness(root),
         "columns": columns,
     }
 

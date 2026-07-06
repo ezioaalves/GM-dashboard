@@ -1,4 +1,4 @@
-import { CalendarDays, GitBranch, LayoutGrid, Search, FileDiff, Link, Timer, BookOpen } from "lucide-react";
+import { CalendarDays, GitBranch, LayoutGrid, Search, FileDiff, Link, Timer, BookOpen, RefreshCw } from "lucide-react";
 
 const TOOLS = [
   { key: "session-deck", label: "Session Deck", icon: CalendarDays },
@@ -8,6 +8,7 @@ const TOOLS = [
   { key: "clocks", label: "Clocks", icon: Timer },
   { key: "search", label: "Search Vault", icon: Search },
   { key: "tickets", label: "Tickets", icon: FileDiff },
+  { key: "sync-center", label: "Sync Center", icon: RefreshCw },
   { key: "foundry", label: "Foundry Link", icon: Link },
 ];
 

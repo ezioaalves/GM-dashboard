@@ -12,6 +12,8 @@ import ClocksPage from "./clocks/ClocksPage";
 import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
 import { ClockStrip } from "./components/ClockStrip";
+import { useSyncFreshnessQuery } from "./api/sync";
+import SyncCenter from "./sync/SyncCenter";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -41,6 +43,7 @@ function App() {
   const [foundry, setFoundry] = useState(null);
   const [openFile, setOpenFile] = useState(null);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+  const { data: syncFreshness } = useSyncFreshnessQuery();
 
   function handleSelectSession(id: number) {
     setSelectedSessionId((prev) => (prev === id ? null : id));
@@ -103,7 +106,6 @@ function App() {
 
   if (!data) return <main className="shell"><p>Loading cockpit...</p></main>;
 
-  const freshness = Object.entries(data.freshness as Record<string, { state: string }>);
   const sessionDisplayName = data ? `Session ${data.latest_session.session}` : "—";
 
   return (
@@ -118,12 +120,20 @@ function App() {
     >
       <div className="main-workbench">
         <section className="badges">
-          {freshness.map(([key, value]) => (
-            <span className={`badge badge--${stateClass(value.state)}`} key={key}>
-              <ShieldCheck size={14} /> {key.replaceAll("_", " ")}: {value.state}
-            </span>
-          ))}
+          <span className={`badge badge--${stateClass(syncFreshness?.state ?? "pending")}`}>
+            <ShieldCheck size={14} /> sync: {syncFreshness?.state ?? "loading"}
+          </span>
         </section>
+
+        {syncFreshness && (syncFreshness.state === "conflict" || syncFreshness.state === "failed") && (
+          <section className="notice bad">
+            <span>
+              {syncFreshness.items.filter((item) => item.priority === "high").length} high-priority
+              sync issue(s) need attention.
+            </span>
+            <button onClick={() => openTool("sync-center")}>Open Sync Center</button>
+          </section>
+        )}
 
         <ClockStrip onOpenClocks={() => openTool("clocks")} />
 
@@ -212,6 +222,7 @@ function App() {
               <KanbanBoard />
             </div>
           )}
+          {activeTool === "sync-center" && <SyncCenter />}
           {activeTool === "foundry" && (
             <div className="toolPanel">
               <div className="panelHeader">
