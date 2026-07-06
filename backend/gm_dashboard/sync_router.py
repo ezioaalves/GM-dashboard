@@ -869,7 +869,7 @@ def sync_freshness() -> dict:
                     "job_type": row["job_type"],
                     "target": row["target"],
                     "state": row["status"],
-                    "priority": "high" if row["status"] in ("conflict", "failed") else "normal",
+                    "priority": "high" if row["status"] in ("failed", "blocked") else "normal",
                     "error_code": row["error_code"] or "",
                     "error_message": row["error_message"] or "",
                     "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,

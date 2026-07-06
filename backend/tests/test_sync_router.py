@@ -672,6 +672,9 @@ def test_sync_freshness_items_carry_priority():
             cur.execute(
                 "INSERT INTO sync_jobs (target, direction, status) VALUES ('npc:priority-test', 'foundry_to_postgres', 'failed')"
             )
+            cur.execute(
+                "INSERT INTO sync_jobs (target, direction, status) VALUES ('npc:blocked-test', 'foundry_to_postgres', 'blocked')"
+            )
     finally:
         conn.close()
 
@@ -682,3 +685,4 @@ def test_sync_freshness_items_carry_priority():
     assert by_kind_and_state[("review", "conflict")] == "high"
     assert by_kind_and_state[("review", "pending")] == "normal"
     assert by_kind_and_state[("job", "failed")] == "high"
+    assert by_kind_and_state[("job", "blocked")] == "high"
