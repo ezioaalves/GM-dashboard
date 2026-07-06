@@ -119,6 +119,10 @@ def test_sync_npcs_endpoint_calls_projection(tmp_path, monkeypatch):
     assert res.status_code == 200
     assert res.json() == {"scanned": 1, "synced": 1, "errors": []}
 
+    got = client.get("/api/npcs/hayai")
+    assert got.status_code == 200
+    assert got.json()["name"] == "Dattoumaru Hayai"
+
 
 from gm_dashboard import npcs_router
 
@@ -216,7 +220,3 @@ def test_refresh_npc_without_actor_id_returns_404(fake_push_relay):
     _insert_npc()
     res = client.post("/api/npcs/hayai/foundry/refresh", json={"env": "test"})
     assert res.status_code == 404
-
-    got = client.get("/api/npcs/hayai")
-    assert got.status_code == 200
-    assert got.json()["name"] == "Dattoumaru Hayai"
