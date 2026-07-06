@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session as DBSession
 
 from .db.get_db import get_db
-from .db.models import Scene
+from .db.models import LoreAsset, Scene
+from .foundry_journals import create_journal, render_scene_journal_html, update_journal
+from .relay_client import RelayError, load_relay_client
 
 router = APIRouter()
 
@@ -347,3 +349,55 @@ def delete_scene(scene_id: int, db: DBSession = Depends(get_db)) -> dict:
     db.delete(scene)
     db.commit()
     return {"deleted": True}
+
+
+class SceneForeignExportRequest(BaseModel):
+    env: Literal["test", "prod"] = "test"
+
+
+@router.post("/scenes/{scene_id}/foundry/export")
+def export_scene_journal(
+    scene_id: int, payload: SceneForeignExportRequest, db: DBSession = Depends(get_db)
+) -> dict:
+    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail=f"Scene {scene_id} not found")
+
+    pinned = list(scene.pinned_material or [])
+    paths = [item["path"] for item in pinned if item.get("path")]
+    mirrored_assets: list[dict] = []
+    skipped_unmirrored: list[str] = []
+    if paths:
+        assets = db.query(LoreAsset).filter(LoreAsset.source_path.in_(paths)).all()
+        by_path = {asset.source_path: asset for asset in assets}
+        for path in paths:
+            asset = by_path.get(path)
+            if asset is not None and asset.mirror_state == "mirrored":
+                mirrored_assets.append({"foundry_path": asset.foundry_path, "title": asset.title})
+            else:
+                skipped_unmirrored.append(path)
+
+    scene_dict = _scene_to_dict(scene)
+    html = render_scene_journal_html(scene_dict, mirrored_assets)
+
+    try:
+        client = load_relay_client(payload.env)
+        if scene.foundry_journal_id:
+            update_journal(client, scene.foundry_journal_id, html)
+            journal_uuid = scene.foundry_journal_id
+        else:
+            journal_uuid = create_journal(client, scene_dict, html)
+    except RelayError as exc:
+        scene.foundry_export_status = "failed"
+        db.commit()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    scene.foundry_journal_id = journal_uuid
+    scene.foundry_export_status = "exported"
+    db.commit()
+
+    return {
+        "exported": True,
+        "foundry_journal_id": journal_uuid,
+        "skipped_unmirrored": skipped_unmirrored,
+    }
