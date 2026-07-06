@@ -2248,3 +2248,87 @@ button.deck-card {
     grid-template-columns: 1fr;
   }
 }
+
+.sync-center .panelHeader p {
+  color: var(--muted, #8a8f98);
+  font-size: 0.85rem;
+}
+
+.sync-group {
+  margin-top: 1.25rem;
+}
+
+.sync-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.sync-group-count {
+  background: var(--surface-2, #2a2d34);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.sync-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.sync-review-card {
+  border: 1px solid var(--border, #33363d);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.sync-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sync-review-type {
+  font-weight: 600;
+}
+
+.sync-review-surfaces {
+  font-size: 0.8rem;
+  color: var(--muted, #8a8f98);
+  margin-top: 0.25rem;
+}
+
+.sync-review-conflicts {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--bad, #e5484d);
+  font-size: 0.8rem;
+  margin-top: 0.35rem;
+}
+
+.sync-review-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.sync-apply-button {
+  margin-left: auto;
+}
+
+.sync-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--bad, #e5484d);
+  margin-top: 0.5rem;
+}
+
+.sync-empty {
+  color: var(--muted, #8a8f98);
+  margin-top: 1rem;
+}
