@@ -730,6 +730,7 @@ def list_grouped_sync_reviews() -> dict:
                        created_at, updated_at, decided_at, applied_at
                 FROM sync_reviews
                 WHERE review_status IN ('pending', 'conflict', 'stale')
+                   OR (review_status IN ('accepted', 'merged') AND applied_at IS NULL)
                 ORDER BY target_type ASC, created_at DESC
                 """
             )

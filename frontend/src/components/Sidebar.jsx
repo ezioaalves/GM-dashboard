@@ -12,7 +12,7 @@ const TOOLS = [
   { key: "foundry", label: "Foundry Link", icon: Link },
 ];
 
-export function Sidebar({ activeTool, onToolChange, sessionName }) {
+export function Sidebar({ activeTool, onToolChange, sessionName, syncPendingCount = 0 }) {
   return (
     <div className="sidebar-container">
       {/* App Identity */}
@@ -35,6 +35,9 @@ export function Sidebar({ activeTool, onToolChange, sessionName }) {
           >
             <Icon size={18} />
             <span className="nav-label">{label}</span>
+            {key === "sync-center" && syncPendingCount > 0 && (
+              <span className="sync-group-count">{syncPendingCount}</span>
+            )}
           </button>
         ))}
       </nav>

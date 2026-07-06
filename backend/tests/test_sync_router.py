@@ -643,6 +643,7 @@ def test_grouped_reviews_buckets_by_target_type():
     _seed_review(review_type="ticket_import", target_type="ticket", review_status="pending")
     _seed_review(review_type="thread_import", target_type="thread", review_status="conflict")
     _seed_review(review_type="npc_import", target_type="npc", review_status="stale")
+    # Not yet applied, so this should also surface under the "ticket" group.
     _seed_review(review_type="ticket_import", target_type="ticket", review_status="accepted")
 
     res = client.get("/api/sync/reviews/grouped")
@@ -650,16 +651,49 @@ def test_grouped_reviews_buckets_by_target_type():
     body = res.json()
     by_type = {g["target_type"]: g for g in body["groups"]}
     assert set(by_type) == {"ticket", "thread", "npc"}
-    assert by_type["ticket"]["count"] == 1
+    assert by_type["ticket"]["count"] == 2
     assert by_type["thread"]["count"] == 1
     assert by_type["npc"]["count"] == 1
-    assert by_type["ticket"]["reviews"][0]["review_type"] == "ticket_import"
+    assert {row["review_type"] for row in by_type["ticket"]["reviews"]} == {"ticket_import"}
 
 
 def test_grouped_reviews_empty_when_nothing_pending():
     res = client.get("/api/sync/reviews/grouped")
     assert res.status_code == 200
     assert res.json()["groups"] == []
+
+
+def test_grouped_reviews_includes_accepted_not_yet_applied():
+    review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        review_status="accepted",
+    )
+
+    res = client.get("/api/sync/reviews/grouped")
+    assert res.status_code == 200
+    by_type = {g["target_type"]: g for g in res.json()["groups"]}
+    assert "ticket" in by_type
+    assert str(review["id"]) in [row["id"] for row in by_type["ticket"]["reviews"]]
+
+
+def test_grouped_reviews_excludes_already_applied():
+    review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="sync-router-test-ticket",
+        review_status="accepted",
+        proposed_changes={"ticket": FULL_TICKET_PAYLOAD},
+    )
+
+    applied = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert applied.status_code == 200
+
+    res = client.get("/api/sync/reviews/grouped")
+    assert res.status_code == 200
+    by_type = {g["target_type"]: g for g in res.json()["groups"]}
+    ticket_ids = [row["id"] for row in by_type.get("ticket", {}).get("reviews", [])]
+    assert str(review["id"]) not in ticket_ids
 
 
 def test_sync_freshness_items_carry_priority():

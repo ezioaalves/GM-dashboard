@@ -28,7 +28,7 @@ const queryClient = new QueryClient({
 function stateClass(state) {
   return state === "fresh" || state === "configured"
     ? "ok"
-    : state === "missing" || state === "error"
+    : state === "missing" || state === "error" || state === "conflict" || state === "failed"
     ? "bad"
     : "warn";
 }
@@ -115,6 +115,10 @@ function App() {
           activeTool={activeTool}
           onToolChange={openTool}
           sessionName={sessionDisplayName}
+          syncPendingCount={
+            (syncFreshness?.counts.pending_reviews ?? 0) +
+            (syncFreshness?.counts.conflict_reviews ?? 0)
+          }
         />
       }
     >
