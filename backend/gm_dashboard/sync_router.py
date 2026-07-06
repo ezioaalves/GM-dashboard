@@ -545,7 +545,7 @@ def _apply_npc_import(cur, review: dict) -> dict:
     cur.execute(
         """
         UPDATE npcs
-        SET stats = %(stats)s,
+        SET stats = COALESCE(stats, '{}'::jsonb) || %(stats)s::jsonb,
             foundry_last_synced_at = now(),
             updated_at = now()
         WHERE id = %(id)s

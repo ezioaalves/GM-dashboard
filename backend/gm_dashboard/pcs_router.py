@@ -90,7 +90,7 @@ def refresh_pc_from_foundry(slug: str, payload: PcRefreshRequest) -> dict:
             cur.execute(
                 """
                 UPDATE pcs
-                SET stats = %(stats)s,
+                SET stats = COALESCE(stats, '{}'::jsonb) || %(stats)s::jsonb,
                     foundry_last_synced_at = now(),
                     updated_at = now()
                 WHERE slug = %(slug)s

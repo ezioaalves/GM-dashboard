@@ -585,3 +585,55 @@ def test_apply_npc_import_for_missing_npc_returns_409():
     )
     res = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
     assert res.status_code == 409
+
+
+def test_apply_npc_import_merges_stats_and_preserves_unrefreshed_keys():
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO npcs (slug, name, stats, foundry_actor_id_test, foundry_sync_locked)
+                VALUES ('merge-check', 'Merge Check Npc', %s, 'Actor.pushed2', true)
+                RETURNING id
+                """,
+                (
+                    psycopg2.extras.Json(
+                        {
+                            "classes": {"shinobi": 3},
+                            "abilities": {"str": 12},
+                            "naruto_stats": {"reputation": 1},
+                        }
+                    ),
+                ),
+            )
+            npc_id = cur.fetchone()["id"]
+    finally:
+        conn.close()
+
+    review = _seed_review(
+        review_type="npc_import",
+        target_surface="postgres",
+        target_type="npc",
+        target_id=str(npc_id),
+        proposed_changes={"stats": {"abilities": {"str": 99}, "naruto_stats": {"reputation": 2}}},
+        review_status="accepted",
+    )
+
+    applied = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["applied"] is True
+
+    npc = client.get("/api/npcs/merge-check").json()
+    # Refreshed keys reflect the new Foundry-fetched values.
+    assert npc["stats"]["abilities"]["str"] == 99
+    assert npc["stats"]["naruto_stats"]["reputation"] == 2
+    # classes was never part of the refresh payload and must survive untouched.
+    assert npc["stats"]["classes"] == {"shinobi": 3}
+
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM npcs WHERE id = %s", (npc_id,))
+    finally:
+        conn.close()

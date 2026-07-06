@@ -58,6 +58,7 @@ if (page) {{
     {{ name: "Scene", type: "text", text: {{ content: {json.dumps(html)}, format: 1 }} }}
   ]);
 }}
+await journal.update({{ ownership: {json.dumps(GM_ONLY_OWNERSHIP)} }});
 return {{ ok: true, uuid: journal.uuid }};
 """
     result = client.execute_js(script)
