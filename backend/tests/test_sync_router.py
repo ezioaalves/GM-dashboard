@@ -516,3 +516,72 @@ def test_apply_asset_import_rejects_invalid_status():
     res = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
     assert res.status_code == 422
     assert "status" in res.json()["detail"].lower()
+
+
+def test_apply_npc_import_updates_stats_and_clears_review():
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO npcs (slug, name, stats, foundry_actor_id_test, foundry_sync_locked)
+                VALUES ('hayai', 'Dattoumaru Hayai', %s, 'Actor.pushed1', true)
+                RETURNING id
+                """,
+                (psycopg2.extras.Json({"abilities": {"str": 12}, "naruto_stats": {}}),),
+            )
+            npc_id = cur.fetchone()["id"]
+    finally:
+        conn.close()
+
+    review = _seed_review(
+        review_type="npc_import",
+        target_surface="postgres",
+        target_type="npc",
+        target_id=str(npc_id),
+        proposed_changes={"stats": {"abilities": {"str": 99}, "naruto_stats": {"reputation": 2}}},
+        review_status="accepted",
+    )
+
+    applied = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["applied"] is True
+    assert applied.json()["npc_id"] == str(npc_id)
+
+    npc = client.get("/api/npcs/hayai").json()
+    assert npc["stats"]["abilities"]["str"] == 99
+    assert npc["stats"]["naruto_stats"]["reputation"] == 2
+
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM npcs WHERE id = %s", (npc_id,))
+    finally:
+        conn.close()
+
+
+def test_apply_npc_import_without_stats_payload_returns_409():
+    review = _seed_review(
+        review_type="npc_import",
+        target_surface="postgres",
+        target_type="npc",
+        target_id="1",
+        review_status="accepted",
+        proposed_changes={},
+    )
+    res = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert res.status_code == 409
+    assert "npc_import review has no stats payload" in res.json()["detail"]
+
+
+def test_apply_npc_import_for_missing_npc_returns_409():
+    review = _seed_review(
+        review_type="npc_import",
+        target_surface="postgres",
+        target_type="npc",
+        target_id="99999999",
+        review_status="accepted",
+        proposed_changes={"stats": {"abilities": {"str": 1}}},
+    )
+    res = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert res.status_code == 409

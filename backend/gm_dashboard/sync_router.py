@@ -536,6 +536,38 @@ def _apply_asset_import(cur, review: dict) -> dict:
     return {"applied": True, "asset_id": asset_id, "conflict_with": duplicate_of}
 
 
+def _apply_npc_import(cur, review: dict) -> dict:
+    payload = review["proposed_changes"] or {}
+    stats = payload.get("stats")
+    if stats is None:
+        raise HTTPException(status_code=409, detail="npc_import review has no stats payload")
+
+    cur.execute(
+        """
+        UPDATE npcs
+        SET stats = %(stats)s,
+            foundry_last_synced_at = now(),
+            updated_at = now()
+        WHERE id = %(id)s
+        RETURNING id
+        """,
+        {"stats": psycopg2.extras.Json(stats), "id": int(review["target_id"])},
+    )
+    row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=409, detail=f"npc {review['target_id']} no longer exists")
+
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted', applied_at = now(), updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {"applied": True, "npc_id": str(row["id"])}
+
+
 def _apply_clock_mirror(cur, review: dict) -> dict:
     from . import clockworks_mirror
 
@@ -896,6 +928,12 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
 
             if review["review_type"] == "asset_import" and review["target_type"] == "asset":
                 result = _apply_asset_import(cur, review)
+                result = _finish_apply_job(cur, job_id, result)
+                conn.commit()
+                return result
+
+            if review["review_type"] == "npc_import" and review["target_type"] == "npc":
+                result = _apply_npc_import(cur, review)
                 result = _finish_apply_job(cur, job_id, result)
                 conn.commit()
                 return result
