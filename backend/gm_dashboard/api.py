@@ -15,6 +15,7 @@ from .threads_router import router as threads_router
 from .clocks_router import router as clocks_router
 from .adventures_router import router as adventures_router
 from .generator_router import router as generator_router
+from .npcs_router import router as npcs_router
 from .system_enums import enum_catalog
 
 
@@ -28,6 +29,7 @@ app.include_router(threads_router, prefix="/api")
 app.include_router(clocks_router, prefix="/api")
 app.include_router(adventures_router, prefix="/api")
 app.include_router(generator_router, prefix="/api")
+app.include_router(npcs_router, prefix="/api")
 
 
 class SessionNoteRequest(BaseModel):
