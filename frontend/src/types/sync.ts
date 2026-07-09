@@ -22,7 +22,7 @@ export interface SyncReviewGroup {
 }
 
 export interface SyncFreshnessItem {
-  kind: "review" | "job";
+  kind: "review" | "job" | "state" | "integration";
   id: string;
   state: string;
   priority: "high" | "normal";
@@ -34,6 +34,7 @@ export interface SyncFreshnessItem {
   target?: string;
   error_code?: string;
   error_message?: string;
+  label?: string;
 }
 
 export interface SyncFreshness {
@@ -45,6 +46,10 @@ export interface SyncFreshness {
     failed_jobs: number;
     blocked_jobs: number;
     stale_records: number;
+    stale_vault: number;
+    stale_asset: number;
+    stale_foundry: number;
+    unconfigured_integrations: number;
   };
   items: SyncFreshnessItem[];
 }

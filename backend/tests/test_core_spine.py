@@ -853,7 +853,7 @@ def test_sync_freshness_summarizes_reviews_jobs_and_stale_records():
         assert data["counts"]["pending_reviews"] == 1
         assert data["counts"]["failed_jobs"] == 1
         assert data["counts"]["stale_records"] >= 1
-        assert {item["kind"] for item in data["items"]} == {"review", "job"}
+        assert {item["kind"] for item in data["items"]} == {"review", "job", "state"}
     finally:
         conn.close()
         _clean()

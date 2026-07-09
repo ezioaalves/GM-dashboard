@@ -1,0 +1,50 @@
+:root {
+  /* Neutrals — derived from Deep Indigo / Iron Black / Weathered Steel
+     (Kaihou Visual Identity Kit, "Silk, Steel & Seal") */
+  --base: #10152a;
+  --surface: #1f2a44;
+  --surface-raised: #29365a;
+  --border: #333d55;
+  --border-strong: #5f646d;
+
+  /* Weathered Steel — general interactive chrome + "stale" severity */
+  --azure: #5f646d;
+  --azure-bright: #8b909a;
+  --azure-tint-bg: #232732;
+  --azure-tint-border: #3a3f4b;
+
+  /* Wax Ivory — "fresh" severity + positive/secondary chrome */
+  --teal: #d7c8a3;
+  --teal-bright: #e9ddc0;
+  --teal-tint-bg: #2e2a1e;
+  --teal-tint-border: #4a4530;
+
+  /* Corruption Green — "decision needed" severity + attention badge */
+  --amber: #3e5b4f;
+  --amber-bright: #6e8c7e;
+  --amber-tint-bg: #16211c;
+  --amber-tint-border: #24362e;
+
+  /* Dried Blood — "conflict" severity, warnings */
+  --red: #6b1f28;
+  --red-bright: #9c4650;
+  --red-tint-bg: #2a1013;
+  --red-tint-border: #451a20;
+
+  --text-high: #edeae2;
+  --text-body: #c7c2b8;
+  --text-muted: #a6a29a;
+  --text-dim: #83807a;
+  --text-faint: #5f5b55;
+
+  /* Kit says avoid rounded modern UX cards, but prefers circles/seals —
+     shrink rectangular radii, keep the pill radius for badges/rings/dots. */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-pill: 99px;
+
+  --font-display: "Cinzel", serif;
+  --font-body: "Noto Serif JP", serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}

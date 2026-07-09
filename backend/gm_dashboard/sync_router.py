@@ -8,10 +8,15 @@ import psycopg2.extras
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from . import services
 from .db.get_db import get_connection
 from .system_enums import ASSET_STATUSES, DECISION_REVIEW_STATUSES
 
 router = APIRouter()
+
+
+def _foundry_integration_state() -> dict:
+    return services.foundry_status(services.find_vault_root())
 
 
 class SyncReviewDecision(BaseModel):
@@ -782,43 +787,30 @@ def sync_freshness() -> dict:
                   (SELECT count(*) FROM sync_jobs WHERE status = 'failed') AS failed_jobs,
                   (SELECT count(*) FROM sync_jobs WHERE status = 'blocked') AS blocked_jobs,
                   (
-                    SELECT count(*) FROM lore_sources
-                    WHERE freshness_state <> 'fresh'
-                  ) +
+                    (SELECT count(*) FROM lore_sources WHERE freshness_state <> 'fresh') +
+                    (SELECT count(*) FROM lore_entities WHERE freshness_state <> 'fresh') +
+                    (SELECT count(*) FROM lore_sections WHERE freshness_state <> 'fresh') +
+                    (SELECT count(*) FROM lore_relationships WHERE freshness_state <> 'fresh') +
+                    (SELECT count(*) FROM threads WHERE freshness_state <> 'fresh') +
+                    (SELECT count(*) FROM sessions WHERE freshness_state <> 'fresh') +
+                    (SELECT count(*) FROM scenes WHERE freshness_state <> 'fresh')
+                  ) AS stale_vault,
                   (
-                    SELECT count(*) FROM lore_entities
-                    WHERE freshness_state <> 'fresh'
-                  ) +
-                  (
-                    SELECT count(*) FROM lore_sections
-                    WHERE freshness_state <> 'fresh'
-                  ) +
-                  (
-                    SELECT count(*) FROM lore_relationships
-                    WHERE freshness_state <> 'fresh'
-                  ) +
+                    SELECT count(*) FROM lore_assets WHERE freshness_state <> 'fresh'
+                  ) AS stale_asset,
                   (
                     SELECT count(*) FROM lore_assets
-                    WHERE freshness_state <> 'fresh'
-                       OR mirror_state IN ('stale_mirror', 'missing_source', 'missing_mirror', 'conflict', 'failed')
-                  ) +
-                  (
-                    SELECT count(*) FROM threads
-                    WHERE freshness_state <> 'fresh'
-                  ) +
-                  (
-                    SELECT count(*) FROM sessions
-                    WHERE freshness_state <> 'fresh'
-                  ) +
-                  (
-                    SELECT count(*) FROM scenes
-                    WHERE freshness_state <> 'fresh'
-                  ) AS stale_records
+                    WHERE mirror_state IN ('stale_mirror', 'missing_source', 'missing_mirror', 'conflict', 'failed')
+                  ) AS stale_foundry
                 """
             )
             counts = dict(cur.fetchone())
             for key, value in list(counts.items()):
                 counts[key] = int(value or 0)
+            counts["stale_records"] = counts["stale_vault"] + counts["stale_asset"] + counts["stale_foundry"]
+
+            foundry = _foundry_integration_state()
+            counts["unconfigured_integrations"] = 1 if foundry.get("state") == "unconfigured" else 0
 
             if counts["conflict_reviews"] > 0:
                 state = "conflict"
@@ -848,7 +840,7 @@ def sync_freshness() -> dict:
                     "target_type": row["target_type"],
                     "target_id": row["target_id"],
                     "state": row["review_status"],
-                    "priority": "high" if row["review_status"] in ("conflict", "failed") else "normal",
+                    "priority": "high" if row["review_status"] in ("conflict", "failed", "stale") else "normal",
                     "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
                 }
                 for row in cur.fetchall()
@@ -878,7 +870,57 @@ def sync_freshness() -> dict:
                 for row in cur.fetchall()
             ]
 
-            return {"state": state, "counts": counts, "items": review_items + job_items}
+            state_items = []
+            if counts["stale_vault"] > 0:
+                state_items.append(
+                    {
+                        "kind": "state",
+                        "id": "stale-vault",
+                        "target_type": "vault",
+                        "state": "stale",
+                        "priority": "high",
+                        "updated_at": None,
+                        "label": f"{counts['stale_vault']} vault record(s) need review",
+                    }
+                )
+            if counts["stale_asset"] > 0:
+                state_items.append(
+                    {
+                        "kind": "state",
+                        "id": "stale-asset",
+                        "target_type": "asset",
+                        "state": "stale",
+                        "priority": "high",
+                        "updated_at": None,
+                        "label": f"{counts['stale_asset']} asset(s) need review",
+                    }
+                )
+            if counts["stale_foundry"] > 0:
+                state_items.append(
+                    {
+                        "kind": "state",
+                        "id": "stale-foundry",
+                        "target_type": "foundry",
+                        "state": "stale",
+                        "priority": "high",
+                        "updated_at": None,
+                        "label": f"{counts['stale_foundry']} Foundry mirror(s) need review",
+                    }
+                )
+            if counts["unconfigured_integrations"] > 0:
+                state_items.append(
+                    {
+                        "kind": "integration",
+                        "id": "foundry-unconfigured",
+                        "target_type": "foundry",
+                        "state": "unconfigured",
+                        "priority": "high",
+                        "updated_at": None,
+                        "label": "Foundry integration is not configured",
+                    }
+                )
+
+            return {"state": state, "counts": counts, "items": review_items + job_items + state_items}
     finally:
         conn.close()
 

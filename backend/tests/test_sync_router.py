@@ -720,3 +720,72 @@ def test_sync_freshness_items_carry_priority():
     assert by_kind_and_state[("review", "pending")] == "normal"
     assert by_kind_and_state[("job", "failed")] == "high"
     assert by_kind_and_state[("job", "blocked")] == "high"
+
+
+def test_sync_freshness_marks_stale_reviews_as_high_priority():
+    _seed_review(review_type="vault_import", target_type="entity", review_status="stale")
+
+    res = client.get("/api/sync/freshness")
+    assert res.status_code == 200
+    items = res.json()["items"]
+    by_kind_and_state = {(item["kind"], item["state"]): item["priority"] for item in items}
+    assert by_kind_and_state[("review", "stale")] == "high"
+
+
+def test_sync_freshness_breaks_down_stale_counts_by_category():
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO lore_sources (source_path, title, freshness_state)
+                VALUES ('Lore/stale-vault-test.md', 'Stale Vault Test', 'stale_source_changed')
+                """
+            )
+            cur.execute(
+                """
+                INSERT INTO lore_assets (source_path, title, freshness_state, mirror_state)
+                VALUES ('Lore/Assets/stale-asset-test.png', 'Stale Asset Test', 'stale_source_changed', 'fresh')
+                """
+            )
+            cur.execute(
+                """
+                INSERT INTO lore_assets (source_path, title, freshness_state, mirror_state)
+                VALUES ('Lore/Assets/stale-foundry-test.png', 'Stale Foundry Test', 'fresh', 'stale_mirror')
+                """
+            )
+    finally:
+        conn.close()
+
+    res = client.get("/api/sync/freshness")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["state"] == "stale"
+    assert data["counts"]["stale_vault"] == 1
+    assert data["counts"]["stale_asset"] == 1
+    assert data["counts"]["stale_foundry"] == 1
+
+    by_kind_and_id = {(item["kind"], item["id"]): item for item in data["items"]}
+    assert by_kind_and_id[("state", "stale-vault")]["priority"] == "high"
+    assert by_kind_and_id[("state", "stale-asset")]["priority"] == "high"
+    assert by_kind_and_id[("state", "stale-foundry")]["priority"] == "high"
+
+
+def test_sync_freshness_surfaces_unconfigured_foundry_integration(monkeypatch):
+    from gm_dashboard import sync_router
+
+    monkeypatch.setattr(
+        sync_router,
+        "_foundry_integration_state",
+        lambda: {"state": "unconfigured", "path": "fake/.env"},
+    )
+
+    res = client.get("/api/sync/freshness")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["counts"]["unconfigured_integrations"] == 1
+
+    by_kind_and_id = {(item["kind"], item["id"]): item for item in data["items"]}
+    integration_item = by_kind_and_id[("integration", "foundry-unconfigured")]
+    assert integration_item["priority"] == "high"
+    assert integration_item["state"] == "unconfigured"
