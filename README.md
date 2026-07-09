@@ -13,7 +13,6 @@ Foundry mirror metadata.
 ## Backend
 
 ```bash
-cd "Creation Zone/gm-dashboard"
 python -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
@@ -23,16 +22,14 @@ uvicorn gm_dashboard.api:app --app-dir backend --reload
 Optional local Postgres for dashboard structured state:
 
 ```bash
-cd "Creation Zone/gm-dashboard"
 docker compose up -d postgres
 ```
 
-Run database migrations from the dashboard root. `backend/alembic/` is the
+Run database migrations from the repo root. `backend/alembic/` is the
 canonical migration tree; the root `alembic.ini` is the only supported Alembic
 config.
 
 ```bash
-cd "Creation Zone/gm-dashboard"
 PYTHONPATH=backend alembic -c alembic.ini upgrade head
 ```
 
@@ -54,13 +51,14 @@ Useful endpoints:
 - `POST /api/drafts/{id}/save`
 - `GET /api/foundry/status`
 
-The backend auto-detects the vault root from the app location. Set
-`KAIHOU_VAULT_ROOT` to override it.
+gm-dashboard is its own repository, checked out as a gitignored sibling folder
+at the Kaihou vault repo root. Set `KAIHOU_VAULT_ROOT` to the Kaihou vault
+checkout path (it no longer auto-detects from the app's own location, since
+the app and the vault are separate repos).
 
 ## Frontend
 
 ```bash
-cd "Creation Zone/gm-dashboard"
 npm install
 npm run dev
 ```
@@ -70,7 +68,10 @@ The Vite dev server proxies `/api` to `http://127.0.0.1:8000`.
 ## Tests
 
 ```bash
-cd "Creation Zone/gm-dashboard"
 python -m pytest backend/tests
 npm test
 ```
+
+## Deployment
+
+See `DEPLOY.md` for the VPS deployment runbook and GitHub Actions pipeline.
