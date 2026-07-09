@@ -17,6 +17,9 @@ from .adventures_router import router as adventures_router
 from .generator_router import router as generator_router
 from .npcs_router import router as npcs_router
 from .pcs_router import router as pcs_router
+from .pc_lanes_router import router as pc_lanes_router
+from .risk_register_router import router as risk_register_router
+from .feedback_router import router as feedback_router
 from .system_enums import enum_catalog
 
 
@@ -32,6 +35,9 @@ app.include_router(adventures_router, prefix="/api")
 app.include_router(generator_router, prefix="/api")
 app.include_router(npcs_router, prefix="/api")
 app.include_router(pcs_router, prefix="/api")
+app.include_router(pc_lanes_router, prefix="/api")
+app.include_router(risk_register_router, prefix="/api")
+app.include_router(feedback_router, prefix="/api")
 
 
 class SessionNoteRequest(BaseModel):

@@ -1,4 +1,7 @@
-import { CalendarDays, GitBranch, LayoutGrid, Search, FileDiff, Link, Timer, BookOpen, RefreshCw } from "lucide-react";
+import {
+  CalendarDays, GitBranch, LayoutGrid, Search, FileDiff, Link, Timer, BookOpen, RefreshCw,
+  Users, ShieldAlert, MessageSquare,
+} from "lucide-react";
 
 const TOOLS = [
   { key: "session-deck", label: "Session Deck", icon: CalendarDays },
@@ -6,13 +9,16 @@ const TOOLS = [
   { key: "scene-deck", label: "Scene Deck", icon: LayoutGrid },
   { key: "threads", label: "Thread Direction", icon: GitBranch },
   { key: "clocks", label: "Clocks", icon: Timer },
+  { key: "pc-lanes", label: "PC Lanes", icon: Users },
+  { key: "risk-register", label: "Risk Register", icon: ShieldAlert },
+  { key: "feedback-tracker", label: "Feedback", icon: MessageSquare },
   { key: "search", label: "Search Vault", icon: Search },
   { key: "tickets", label: "Tickets", icon: FileDiff },
   { key: "sync-center", label: "Sync Center", icon: RefreshCw },
   { key: "foundry", label: "Foundry Link", icon: Link },
 ];
 
-export function Sidebar({ activeTool, onToolChange, sessionName, syncPendingCount = 0 }) {
+export function Sidebar({ activeTool, onToolChange, sessionName, syncPendingCount = 0, campaignAlertCount = 0 }) {
   return (
     <div className="sidebar-container">
       {/* App Identity */}
@@ -37,6 +43,9 @@ export function Sidebar({ activeTool, onToolChange, sessionName, syncPendingCoun
             <span className="nav-label">{label}</span>
             {key === "sync-center" && syncPendingCount > 0 && (
               <span className="sync-group-count">{syncPendingCount}</span>
+            )}
+            {key === "risk-register" && campaignAlertCount > 0 && (
+              <span className="sync-group-count">{campaignAlertCount}</span>
             )}
           </button>
         ))}

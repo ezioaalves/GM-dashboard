@@ -632,3 +632,62 @@ class GeneratorEntry(Base):
     name = Column(Text, nullable=False, server_default="")
     description = Column(Text, nullable=False, server_default="")
     sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+
+class PcLane(Base):
+    __tablename__ = "pc_lanes"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pc_id = Column(Integer, ForeignKey("pcs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    goal = Column(Text, nullable=False, server_default="")
+    status = Column(Text, nullable=False, server_default="active")
+    pressure = Column(Text, nullable=False, server_default="")
+    notes = Column(Text, nullable=False, server_default="")
+    last_touched_session = Column(Integer)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class Risk(Base):
+    __tablename__ = "risks"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(Text, nullable=False, server_default="")
+    description = Column(Text, nullable=False, server_default="")
+    likelihood = Column(Text, nullable=False, server_default="medium")
+    mitigation = Column(Text, nullable=False, server_default="")
+    contingency = Column(Text, nullable=False, server_default="")
+    status = Column(Text, nullable=False, server_default="open")
+    related_thread_id = Column(Text, ForeignKey("threads.id", ondelete="SET NULL"))
+    related_pc_id = Column(Integer, ForeignKey("pcs.id", ondelete="SET NULL"))
+    last_reviewed_session = Column(Integer)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class FeedbackEntry(Base):
+    __tablename__ = "feedback_entries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_number = Column(Integer)
+    cadence = Column(Text, nullable=False, server_default="quick_check")
+    players_present = Column(Text, nullable=False, server_default="")
+    more_of = Column(Text, nullable=False, server_default="")
+    less_of = Column(Text, nullable=False, server_default="")
+    clarify = Column(Text, nullable=False, server_default="")
+    notes = Column(Text, nullable=False, server_default="")
+    recorded_at = Column(Date, nullable=False, server_default=func.current_date())
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    action_items = relationship(
+        "FeedbackActionItem", cascade="all, delete-orphan", order_by="FeedbackActionItem.sort_order"
+    )
+
+
+class FeedbackActionItem(Base):
+    __tablename__ = "feedback_action_items"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    feedback_id = Column(Integer, ForeignKey("feedback_entries.id", ondelete="CASCADE"), nullable=False)
+    item = Column(Text, nullable=False, server_default="")
+    owner = Column(Text, nullable=False, server_default="")
+    follow_up = Column(Text, nullable=False, server_default="")
+    status = Column(Text, nullable=False, server_default="open")
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))

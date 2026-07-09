@@ -13,7 +13,12 @@ import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
 import { ClockStrip } from "./components/ClockStrip";
 import { useSyncFreshnessQuery } from "./api/sync";
+import { useRisksStaleQuery } from "./api/risks";
+import { useFeedbackOverdueQuery } from "./api/feedback";
 import SyncCenter from "./sync/SyncCenter";
+import PcLanesPanel from "./pc-lanes/PcLanesPanel";
+import RiskRegisterPanel from "./risk-register/RiskRegisterPanel";
+import FeedbackTrackerPanel from "./feedback/FeedbackTrackerPanel";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -44,6 +49,8 @@ function App() {
   const [openFile, setOpenFile] = useState(null);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const { data: syncFreshness } = useSyncFreshnessQuery();
+  const { data: staleRisks = [] } = useRisksStaleQuery();
+  const { data: overdueFeedback = [] } = useFeedbackOverdueQuery();
 
   function handleSelectSession(id: number) {
     setSelectedSessionId((prev) => (prev === id ? null : id));
@@ -119,6 +126,7 @@ function App() {
             (syncFreshness?.counts.pending_reviews ?? 0) +
             (syncFreshness?.counts.conflict_reviews ?? 0)
           }
+          campaignAlertCount={staleRisks.length + overdueFeedback.length}
         />
       }
     >
@@ -129,13 +137,29 @@ function App() {
           </span>
         </section>
 
-        {syncFreshness && (syncFreshness.state === "conflict" || syncFreshness.state === "failed") && (
+        {(() => {
+          const highPriorityItems = syncFreshness?.items.filter((item) => item.priority === "high") ?? [];
+          return highPriorityItems.length > 0 && (
+            <section className="notice bad">
+              <span>
+                {highPriorityItems.length} high-priority sync issue(s) need attention.
+              </span>
+              <button onClick={() => openTool("sync-center")}>Open Sync Center</button>
+            </section>
+          );
+        })()}
+
+        {staleRisks.length > 0 && (
           <section className="notice bad">
-            <span>
-              {syncFreshness.items.filter((item) => item.priority === "high").length} high-priority
-              sync issue(s) need attention.
-            </span>
-            <button onClick={() => openTool("sync-center")}>Open Sync Center</button>
+            <span>{staleRisks.length} risk(s) not reviewed recently.</span>
+            <button onClick={() => openTool("risk-register")}>Open Risk Register</button>
+          </section>
+        )}
+
+        {overdueFeedback.length > 0 && (
+          <section className="notice bad">
+            <span>{overdueFeedback.length} feedback cadence(s) overdue.</span>
+            <button onClick={() => openTool("feedback-tracker")}>Open Feedback Tracker</button>
           </section>
         )}
 
@@ -182,6 +206,9 @@ function App() {
             />
           )}
           {activeTool === "clocks" && <ClocksPage />}
+          {activeTool === "pc-lanes" && <PcLanesPanel />}
+          {activeTool === "risk-register" && <RiskRegisterPanel />}
+          {activeTool === "feedback-tracker" && <FeedbackTrackerPanel />}
           {activeTool === "search" && (
             <div className="toolPanel">
               <div className="panelHeader">
