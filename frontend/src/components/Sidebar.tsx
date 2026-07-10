@@ -24,6 +24,10 @@ interface NavItem {
   label: string;
   badge?: number;
   badgeKind?: "attention" | "info";
+  /** Other page keys that should highlight this item (consolidated screens). */
+  aliases?: PageKey[];
+  /** Overlay-style items (Generator) get a ⇥ affordance instead of nav state. */
+  overlay?: boolean;
 }
 
 interface NavGroup {
@@ -57,16 +61,19 @@ export function Sidebar({
         { key: "adventures", label: "Adventures" },
         { key: "sessions", label: "Sessions" },
         { key: "scene-deck", label: "Scene Deck" },
-        { key: "generator", label: "Generator" },
+        { key: "generator", label: "Generator", overlay: true },
       ],
     },
     {
       label: "FOLLOW UP",
       items: [
-        { key: "threads", label: "Threads" },
-        { key: "pc-lanes", label: "PC Lanes" },
-        { key: "risks", label: "Risks", badge: risksBadge, badgeKind: "info" },
-        { key: "feedback", label: "Feedback" },
+        {
+          key: "threads",
+          label: "Campaign Health",
+          badge: risksBadge,
+          badgeKind: "info",
+          aliases: ["pc-lanes", "risks", "feedback"],
+        },
       ],
     },
     {
@@ -80,9 +87,7 @@ export function Sidebar({
     {
       label: "LIBRARY",
       items: [
-        { key: "lore", label: "Lore" },
-        { key: "npcs", label: "NPCs" },
-        { key: "pcs", label: "PCs" },
+        { key: "lore", label: "Library", aliases: ["npcs", "pcs"] },
         { key: "library-search", label: "Assets · Search" },
       ],
     },
@@ -108,18 +113,22 @@ export function Sidebar({
       {groups.map((group) => (
         <div key={group.label}>
           <div className="sidebar-group-label">{group.label}</div>
-          {group.items.map((item) => (
-            <button
-              key={item.key}
-              className={`sidebar-item${current === item.key ? " active" : ""}`}
-              onClick={() => onNavigate(item.key)}
-            >
-              <span>{item.label}</span>
-              {!!item.badge && (
-                <span className={`sidebar-badge sidebar-badge--${item.badgeKind ?? "info"}`}>{item.badge}</span>
-              )}
-            </button>
-          ))}
+          {group.items.map((item) => {
+            const active = current === item.key || (item.aliases?.includes(current) ?? false);
+            return (
+              <button
+                key={item.key}
+                className={`sidebar-item${active ? " active" : ""}`}
+                onClick={() => onNavigate(item.key)}
+              >
+                <span>{item.label}</span>
+                {item.overlay && <span className="sidebar-overlay-glyph">⇥</span>}
+                {!!item.badge && (
+                  <span className={`sidebar-badge sidebar-badge--${item.badgeKind ?? "info"}`}>{item.badge}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
       ))}
 

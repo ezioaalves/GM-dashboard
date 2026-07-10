@@ -25,6 +25,39 @@ export function useSyncFreshnessQuery() {
   });
 }
 
+export function useSyncReviewsQuery(params?: { review_status?: string; review_type?: string }) {
+  const qs = params
+    ? new URLSearchParams(
+        Object.entries(params).filter(([, v]) => v != null) as [string, string][],
+      ).toString()
+    : "";
+  return useQuery<SyncReview[]>({
+    queryKey: ["sync", "reviews", params ?? null],
+    queryFn: () => apiFetch(`/api/sync/reviews${qs ? `?${qs}` : ""}`),
+  });
+}
+
+export function useSyncReviewDetailQuery(id: string | null) {
+  return useQuery<SyncReview & { proposed_changes?: Record<string, unknown>; decision?: Record<string, unknown> }>({
+    queryKey: ["sync", "reviews", "detail", id],
+    queryFn: () => apiFetch(`/api/sync/reviews/${id}`),
+    enabled: !!id,
+  });
+}
+
+/** Vault scans that feed the review inbox (lore + assets). */
+export function useScanVault() {
+  const qc = useQueryClient();
+  return useMutation<{ lore: unknown; assets: unknown }, Error, void>({
+    mutationFn: async () => {
+      const lore = await apiFetch("/api/lore/import/scan", { method: "POST" });
+      const assets = await apiFetch("/api/assets/import/scan", { method: "POST" });
+      return { lore, assets };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sync"] }),
+  });
+}
+
 export function useDecideSyncReview() {
   const qc = useQueryClient();
   return useMutation<SyncReview, Error, { id: string; review_status: string; decision?: Record<string, unknown> }>({

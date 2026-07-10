@@ -62,7 +62,7 @@ export function Cockpit({ onNavigate }: { onNavigate: (page: PageKey) => void })
             <kbd>⌘K</kbd>
             Search vault…
           </div>
-          <button className="btn btn-primary" onClick={() => onNavigate("library-search")}>
+          <button className="btn btn-primary" onClick={() => onNavigate("scene-deck")}>
             ＋ Quick Capture
           </button>
         </div>

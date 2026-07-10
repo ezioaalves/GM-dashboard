@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Scene, SceneCreate, SceneUpdate } from "../types/scene";
+import type { Scene, SceneCreate, ScenePlacement, SceneUpdate } from "../types/scene";
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
@@ -51,6 +51,64 @@ export function usePatchScene() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["scenes"] }),
+  });
+}
+
+/** Move a scene between sessions/lanes (drag-and-drop). */
+export function useMoveScene() {
+  const qc = useQueryClient();
+
+  return useMutation<
+    Scene,
+    Error,
+    { id: number; session_id: number | null; placement?: ScenePlacement; sort_order?: number }
+  >({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<Scene>(`/api/scenes/${id}/session`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["scenes"] });
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+}
+
+export interface SceneExportResult {
+  exported: boolean;
+  foundry_journal_id: string;
+  skipped_unmirrored: string[];
+}
+
+export function useExportSceneToFoundry() {
+  const qc = useQueryClient();
+
+  return useMutation<SceneExportResult, Error, { id: number; env?: "test" | "prod" }>({
+    mutationFn: ({ id, env = "test" }) =>
+      apiFetch<SceneExportResult>(`/api/scenes/${id}/foundry/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ env }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["scenes"] }),
+  });
+}
+
+/** Markdown-first quick-capture path — writes a vault draft file, not a DB row. */
+export function useCaptureSceneDraft() {
+  return useMutation<
+    { id: string; markdown?: string; default_target_path?: string },
+    Error,
+    { title: string; type?: string; notes?: string }
+  >({
+    mutationFn: (body) =>
+      apiFetch(`/api/capture/scene`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
   });
 }
 
