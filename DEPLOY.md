@@ -37,42 +37,22 @@ repo's CI can do for you the first time).
    docker compose -f docker-compose.prod.yml up -d --build
    ```
 
-5. **nginx site for `gm.ezioalves.cloud`** — add a server block alongside the
-   existing Foundry config. Basic Auth is applied at the `server {}` level so
-   it covers both the frontend and `/api` uniformly:
+5. **Proxy host in Nginx Proxy Manager** — the VPS does not run a host
+   nginx; ports 80/443 belong to the Nginx Proxy Manager container
+   (`proxy-app-1`, admin UI on port 81), which also fronts Foundry. The
+   compose file attaches `backend`/`frontend` to NPM's external
+   `proxy-tier` network, so NPM reaches them by container name. In the
+   NPM admin UI:
 
-   ```nginx
-   server {
-       listen 443 ssl;
-       server_name gm.ezioalves.cloud;
-
-       # TLS: reuse whatever mechanism already issues certs for
-       # foundry.ezioalves.cloud on this box (likely certbot) — confirm
-       # locally rather than assuming.
-
-       auth_basic "GM Dashboard";
-       auth_basic_user_file /etc/nginx/.htpasswd-gm;
-
-       location /api {
-           proxy_pass http://127.0.0.1:8001;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-       }
-
-       location / {
-           proxy_pass http://127.0.0.1:8002;
-           proxy_set_header Host $host;
-       }
-   }
-   ```
-
-   Create the credentials file:
-
-   ```bash
-   htpasswd -c /etc/nginx/.htpasswd-gm <your-username>
-   ```
-
-   Reload nginx after adding the site.
+   - **Proxy Host**: domain `gm.ezioalves.cloud`, scheme `http`, forward
+     to `gm-dashboard-frontend` port `80`. Enable *Block Common Exploits*.
+   - **Custom location** `/api`: scheme `http`, forward to
+     `gm-dashboard-backend` port `8000`.
+   - **SSL tab**: request a new Let's Encrypt certificate, enable *Force
+     SSL*.
+   - **Access List** (Basic Auth): create an access list with an
+     Authorization user/password, *Satisfy Any*, and assign it to the
+     proxy host so both the frontend and `/api` are covered.
 
 6. **GitHub Actions secrets/variables** — in this repo's Settings → Secrets
    and variables → Actions, add:
