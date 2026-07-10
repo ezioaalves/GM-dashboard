@@ -19,6 +19,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    container_name: gm-dashboard-backend
+    networks: [default, proxy-tier]
     environment:
       DATABASE_URL: postgresql://kaihou_gm:${POSTGRES_PASSWORD}@postgres:5432/kaihou_gm
       KAIHOU_VAULT_ROOT: ${KAIHOU_VAULT_ROOT}
@@ -35,9 +37,17 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    container_name: gm-dashboard-frontend
+    networks: [default, proxy-tier]
     ports:
       - "127.0.0.1:8002:80"
     restart: unless-stopped
 
 volumes:
   gm-dashboard-postgres:
+
+networks:
+  # Nginx Proxy Manager's shared network on the VPS — it terminates TLS and
+  # Basic Auth for gm.ezioalves.cloud and proxies to these containers by name.
+  proxy-tier:
+    external: true
