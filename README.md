@@ -33,8 +33,11 @@ config.
 PYTHONPATH=backend alembic -c alembic.ini upgrade head
 ```
 
-The initial schema lives at `backend/gm_dashboard/db/schema.sql`. Additive
-Alembic migrations are the supported path for the core spine and review-gated
+Alembic owns the schema end-to-end: migration `001` codifies the initial
+schema and every table since is an Alembic migration, so `upgrade head` builds
+a complete database from empty (`backend/gm_dashboard/db/schema.sql` is kept
+as a historical reference only and is not applied). Additive Alembic
+migrations are the supported path for the core spine and review-gated
 crossings. Do not delete Markdown ticket, lore, session-log, asset, or Foundry
 source artifacts as part of import; stage crossings through `sync_reviews` and
 record apply attempts in `sync_jobs`.
