@@ -1,6 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { FoundryDiff, FoundrySyncResult } from "../types/foundry";
-import type { NPC, PC } from "../types/npc";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
@@ -11,71 +9,66 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ── NPC sync (two-way) ────────────────────────────────────────────────────────
-
-export function useNPCDiff(npcId: number) {
-  return useQuery<FoundryDiff>({
-    queryKey: ["foundry-diff", "npc", npcId],
-    queryFn: () => apiFetch<FoundryDiff>(`/api/foundry/npcs/${npcId}/diff`),
-    enabled: false,
+const jsonPost = <T>(url: string, body: unknown) =>
+  apiFetch<T>(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
-}
 
-export function useFetchNPCFromFoundry() {
-  const qc = useQueryClient();
-  return useMutation<FoundrySyncResult, Error, number>({
-    mutationFn: (id) =>
-      apiFetch<FoundrySyncResult>(`/api/foundry/npcs/${id}/fetch`, { method: "POST" }),
-    onSuccess: (_, id) => qc.invalidateQueries({ queryKey: ["foundry-diff", "npc", id] }),
-  });
-}
+type Env = "test" | "prod";
 
-export function useAcceptNPCImport() {
-  const qc = useQueryClient();
-  return useMutation<NPC, Error, number>({
-    mutationFn: (id) =>
-      apiFetch<NPC>(`/api/foundry/npcs/${id}/accept`, { method: "POST" }),
-    onSuccess: (_, id) => {
-      qc.invalidateQueries({ queryKey: ["npcs", id] });
-      qc.invalidateQueries({ queryKey: ["foundry-diff", "npc", id] });
-    },
-  });
-}
+// ── NPCs — vault-owned; push is one-time & locked, refresh is review-gated ──
 
+/** One-time, irreversible push. 409s if the NPC was ever pushed before. */
 export function usePushNPCToFoundry() {
-  return useMutation<FoundrySyncResult, Error, number>({
-    mutationFn: (id) =>
-      apiFetch<FoundrySyncResult>(`/api/foundry/npcs/${id}/push`, { method: "POST" }),
-  });
-}
-
-// ── PC sync (downstream only) ─────────────────────────────────────────────────
-
-export function usePCDiff(pcId: number) {
-  return useQuery<FoundryDiff>({
-    queryKey: ["foundry-diff", "pc", pcId],
-    queryFn: () => apiFetch<FoundryDiff>(`/api/foundry/pcs/${pcId}/diff`),
-    enabled: false,
-  });
-}
-
-export function useFetchPCFromFoundry() {
   const qc = useQueryClient();
-  return useMutation<FoundrySyncResult, Error, number>({
-    mutationFn: (id) =>
-      apiFetch<FoundrySyncResult>(`/api/foundry/pcs/${id}/fetch`, { method: "POST" }),
-    onSuccess: (_, id) => qc.invalidateQueries({ queryKey: ["foundry-diff", "pc", id] }),
+  return useMutation<
+    { pushed: boolean; env: Env; foundry_actor_id: string },
+    Error,
+    { slug: string; env: Env }
+  >({
+    mutationFn: ({ slug, env }) => jsonPost(`/api/npcs/${slug}/foundry/push`, { env }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["npcs"] }),
   });
 }
 
-export function useAcceptPCImport() {
+/** Pull stats from Foundry; creates a pending sync review only if they differ. */
+export function useRefreshNPCFromFoundry() {
   const qc = useQueryClient();
-  return useMutation<PC, Error, number>({
-    mutationFn: (id) =>
-      apiFetch<PC>(`/api/foundry/pcs/${id}/accept`, { method: "POST" }),
-    onSuccess: (_, id) => {
-      qc.invalidateQueries({ queryKey: ["pcs", id] });
-      qc.invalidateQueries({ queryKey: ["foundry-diff", "pc", id] });
-    },
+  return useMutation<
+    { changed: boolean; review_id?: string },
+    Error,
+    { slug: string; env: Env }
+  >({
+    mutationFn: ({ slug, env }) => jsonPost(`/api/npcs/${slug}/foundry/refresh`, { env }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sync"] }),
+  });
+}
+
+/** Re-import NPCs from vault Sheet files. */
+export function useSyncNPCsFromVault() {
+  const qc = useQueryClient();
+  return useMutation<Record<string, unknown>, Error, void>({
+    mutationFn: () => jsonPost(`/api/npcs/sync`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["npcs"] }),
+  });
+}
+
+// ── PCs — Foundry-owned; import-only, refresh writes directly (no review) ───
+
+export function useRefreshPCFromFoundry() {
+  const qc = useQueryClient();
+  return useMutation<Record<string, unknown>, Error, { slug: string; env: Env }>({
+    mutationFn: ({ slug, env }) => jsonPost(`/api/pcs/${slug}/foundry/refresh`, { env }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pcs"] }),
+  });
+}
+
+export function useSyncPCsFromVault() {
+  const qc = useQueryClient();
+  return useMutation<Record<string, unknown>, Error, void>({
+    mutationFn: () => jsonPost(`/api/pcs/sync`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pcs"] }),
   });
 }

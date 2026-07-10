@@ -1,5 +1,7 @@
 // Scene types matching scenes_router.py _scene_to_dict output (30 fields)
 
+export type ScenePlacement = "ordered" | "floating" | "backlog";
+
 export interface Scene {
   id: number;
   title: string;
@@ -7,6 +9,9 @@ export interface Scene {
   scene_type: "hard" | "soft" | "cut" | "added" | "replacement" | "spotlight" | "bridge";
   status: "Draft" | "Ready" | "Played" | "Cut" | "Replaced";
   session_id: number | null;
+  placement: ScenePlacement;
+  sort_order: number;
+  foundry_export_status: "not_exported" | "exported" | "failed";
   description: string;
   location: string[];
   cast: string[];
@@ -43,6 +48,7 @@ export interface SceneCreate {
   scene_type?: "hard" | "soft" | "cut" | "added" | "replacement" | "spotlight" | "bridge";
   status?: string;
   session_id?: number | null;
+  placement?: ScenePlacement;
   description?: string;
   location?: string[];
   cast?: string[];
