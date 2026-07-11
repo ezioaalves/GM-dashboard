@@ -780,6 +780,28 @@ def _apply_clock_drift_adopt(cur, review: dict) -> dict:
     return {"applied": True, "action": "drift_adopt", "delta": delta, "fire_result": fire_result}
 
 
+_APPLY_HANDLERS: dict[tuple[str, str], Any] = {
+    ("ticket_import", "ticket"): _apply_ticket_import,
+    ("thread_import", "thread"): _apply_thread_import,
+    ("relationship_change", "relationship"): _apply_relationship_change,
+    ("vault_import", "entity"): _apply_vault_import,
+    ("asset_import", "asset"): _apply_asset_import,
+    ("risk_import", "risk"): _apply_risk_import,
+    ("clock_import", "clock"): _apply_clock_import,
+    ("scene_import", "scene"): _apply_scene_import,
+    ("npc_import", "npc"): _apply_npc_import,
+    ("clock_mirror", "clock"): _apply_clock_mirror,
+    ("clock_drift_adopt", "clock"): _apply_clock_drift_adopt,
+}
+
+
+def _dispatch_apply(cur, review: dict) -> dict | None:
+    handler = _APPLY_HANDLERS.get((review["review_type"], review["target_type"]))
+    if handler is None:
+        return None
+    return handler(cur, review)
+
+
 @router.get("/sync/reviews")
 def list_sync_reviews(
     review_status: str | None = None,
@@ -1073,88 +1095,28 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
                 return completed_result
 
             job_id = _insert_apply_job(cur, review, payload.audit_payload(review))
-            if review["review_type"] == "ticket_import" and review["target_type"] == "ticket":
-                result = _apply_ticket_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
+            result = _dispatch_apply(cur, review)
+            if result is None:
+                message = f"apply is not implemented for review_type={review['review_type']}"
+                cur.execute(
+                    """
+                    UPDATE sync_jobs
+                    SET status = 'blocked',
+                        error = %(error)s,
+                        error_code = 'unsupported_review_type',
+                        error_message = %(error)s,
+                        finished_at = now(),
+                        updated_at = now()
+                    WHERE id = %(id)s
+                    """,
+                    {"id": job_id, "error": message},
+                )
                 conn.commit()
-                return result
+                raise HTTPException(status_code=409, detail=message)
 
-            if review["review_type"] == "thread_import" and review["target_type"] == "thread":
-                result = _apply_thread_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "relationship_change" and review["target_type"] == "relationship":
-                result = _apply_relationship_change(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "vault_import" and review["target_type"] == "entity":
-                result = _apply_vault_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "asset_import" and review["target_type"] == "asset":
-                result = _apply_asset_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "risk_import" and review["target_type"] == "risk":
-                result = _apply_risk_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "clock_import" and review["target_type"] == "clock":
-                result = _apply_clock_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "scene_import" and review["target_type"] == "scene":
-                result = _apply_scene_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "npc_import" and review["target_type"] == "npc":
-                result = _apply_npc_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "clock_mirror" and review["target_type"] == "clock":
-                result = _apply_clock_mirror(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "clock_drift_adopt" and review["target_type"] == "clock":
-                result = _apply_clock_drift_adopt(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            message = f"apply is not implemented for review_type={review['review_type']}"
-            cur.execute(
-                """
-                UPDATE sync_jobs
-                SET status = 'blocked',
-                    error = %(error)s,
-                    error_code = 'unsupported_review_type',
-                    error_message = %(error)s,
-                    finished_at = now(),
-                    updated_at = now()
-                WHERE id = %(id)s
-                """,
-                {"id": job_id, "error": message},
-            )
+            result = _finish_apply_job(cur, job_id, result)
             conn.commit()
-            raise HTTPException(status_code=409, detail=message)
+            return result
     except HTTPException:
         conn.rollback()
         raise
