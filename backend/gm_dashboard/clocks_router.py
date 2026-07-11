@@ -15,6 +15,7 @@ from .clock_engine import (
     push_mirrors_for_clocks,
     validate_condition,
 )
+from .clock_scan import scan_clocks
 from .db.get_db import engine_connection, get_connection
 from .system_enums import (
     CASCADE_TRIGGER_KINDS,
@@ -23,7 +24,7 @@ from .system_enums import (
     CLOCK_LIFECYCLES,
     GRAPH_ENDPOINT_TYPES,
 )
-from . import clockworks_mirror
+from . import clockworks_mirror, services
 from .relay_client import RelayError
 
 router = APIRouter()
@@ -220,6 +221,20 @@ def create_clock(payload: ClockCreate) -> dict:
     except Exception:
         conn.rollback()
         raise
+    finally:
+        conn.close()
+
+
+@router.post("/clocks/import/scan")
+def scan_clocks_import(dry_run: bool = False) -> dict:
+    vault_root = services.find_vault_root()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_clocks(vault_root, cur, dry_run=dry_run)
+            if not dry_run:
+                conn.commit()
+            return summary
     finally:
         conn.close()
 

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
-from .db.get_db import get_db
+from . import services
+from .db.get_db import get_connection, get_db
 from .db.models import Risk, Session
+from .risk_scan import scan_risks
 
 router = APIRouter()
 
@@ -163,3 +166,17 @@ def mark_risk_reviewed(risk_id: int, payload: MarkReviewedRequest, db: DBSession
     db.commit()
     db.refresh(risk)
     return _risk_to_dict(risk)
+
+
+@router.post("/risks/import/scan")
+def scan_risks_import(dry_run: bool = False) -> dict:
+    vault_root = services.find_vault_root()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_risks(vault_root, cur, dry_run=dry_run)
+            if not dry_run:
+                conn.commit()
+            return summary
+    finally:
+        conn.close()
