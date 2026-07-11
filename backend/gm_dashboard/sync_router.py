@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from . import services
-from .db.get_db import get_connection
+from .db.get_db import engine_connection, get_connection
 from .system_enums import ASSET_STATUSES, DECISION_REVIEW_STATUSES
 
 router = APIRouter()
@@ -1155,9 +1155,13 @@ def bulk_apply_sync_reviews() -> dict:
         made_progress = False
 
         for review_id in remaining:
-            conn = get_connection()
+            # Accept decision is its own short autocommit step so it persists
+            # across passes regardless of whether the apply attempt below
+            # succeeds — matches decide_sync_review's semantics (accepting a
+            # review is a standalone decision, not part of the apply attempt).
+            accept_conn = get_connection()
             try:
-                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                with accept_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     review = _review(cur, review_id)
                     if review["review_status"] == "pending":
                         cur.execute(
@@ -1169,38 +1173,49 @@ def bulk_apply_sync_reviews() -> dict:
                             (review_id,),
                         )
                         review["review_status"] = "accepted"
-
-                    audit_payload = {
-                        "review_id": review["id"],
-                        "review_type": review["review_type"],
-                        "target_type": review["target_type"],
-                        "target_id": review["target_id"],
-                        "selected_change_ids": [],
-                        "target_surface": review["target_surface"],
-                    }
-                    job_id = _insert_apply_job(cur, review, audit_payload)
-                    result = _dispatch_apply(cur, review)
-                    if result is None:
-                        raise HTTPException(
-                            status_code=409,
-                            detail=f"apply is not implemented for review_type={review['review_type']}",
-                        )
-                    _finish_apply_job(cur, job_id, result)
-                    conn.commit()
-                    applied.append(
-                        {
-                            "review_id": review["id"],
-                            "review_type": review["review_type"],
-                            "target_id": review["target_id"],
-                        }
-                    )
-                    made_progress = True
             except HTTPException as exc:
-                conn.rollback()
                 last_error[review_id] = exc.detail
                 next_remaining.append(review_id)
+                continue
             finally:
-                conn.close()
+                accept_conn.close()
+
+            # Job insert + apply dispatch + job finish share one real
+            # transaction so a failure rolls back cleanly, leaving no
+            # orphaned `running` sync_jobs row (see engine_connection()).
+            try:
+                with engine_connection() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        audit_payload = {
+                            "review_id": review["id"],
+                            "review_type": review["review_type"],
+                            "target_type": review["target_type"],
+                            "target_id": review["target_id"],
+                            "selected_change_ids": [],
+                            "target_surface": review["target_surface"],
+                        }
+                        job_id = _insert_apply_job(cur, review, audit_payload)
+                        result = _dispatch_apply(cur, review)
+                        if result is None:
+                            raise HTTPException(
+                                status_code=409,
+                                detail=f"apply is not implemented for review_type={review['review_type']}",
+                            )
+                        _finish_apply_job(cur, job_id, result)
+                        conn.commit()
+                        applied.append(
+                            {
+                                "review_id": review["id"],
+                                "review_type": review["review_type"],
+                                "target_id": review["target_id"],
+                            }
+                        )
+                        made_progress = True
+            except HTTPException as exc:
+                # engine_connection() already rolled back and closed the
+                # connection on this exception — nothing left to undo here.
+                last_error[review_id] = exc.detail
+                next_remaining.append(review_id)
 
         if not made_progress:
             break

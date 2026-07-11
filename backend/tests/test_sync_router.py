@@ -975,3 +975,45 @@ def test_bulk_apply_rerun_retries_only_previously_failed_reviews():
     applied_ids = {row["review_id"] for row in second_body["applied"]}
     assert child_review["id"] in applied_ids
     assert client.get("/api/tickets/rerun-child").status_code == 200
+
+
+def test_bulk_apply_permanent_failure_leaves_no_orphaned_running_job():
+    # Parent is never seeded, so this review fails on every pass — it stays
+    # in `remaining` until bulk-apply gives up. Before the fix, each failed
+    # attempt's `_insert_apply_job` INSERT committed immediately (autocommit
+    # connection) and the subsequent `conn.rollback()` was a no-op, leaving
+    # a `status='running'` sync_jobs row that nothing ever finalized.
+    orphan_review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="orphan-child",
+        review_status="pending",
+        proposed_changes={
+            "ticket": {
+                **FULL_TICKET_PAYLOAD,
+                "id": "orphan-child",
+                "parent_id": "orphan-parent-never-seeded",
+            }
+        },
+    )
+
+    res = client.post("/api/sync/reviews/bulk-apply", json={})
+    assert res.status_code == 200
+    body = res.json()
+    failed_ids = {row["review_id"] for row in body["failed"]}
+    assert orphan_review["id"] in failed_ids
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT status FROM sync_jobs WHERE review_id = %s",
+                (orphan_review["id"],),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    assert all(row["status"] != "running" for row in rows), (
+        f"orphaned running sync_jobs row(s) left behind: {rows}"
+    )

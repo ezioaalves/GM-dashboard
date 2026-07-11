@@ -309,8 +309,7 @@ export function SyncCenter() {
             className="btn-ghost"
             disabled={bulkApply.isPending || counts.pending + counts.decided === 0}
             onClick={() => {
-              const outstanding = counts.pending + counts.decided;
-              if (!window.confirm(`Accept and apply ${outstanding} outstanding review(s)?`)) return;
+              if (!window.confirm("Accept and apply all outstanding reviews?")) return;
               bulkApply.mutate(undefined, {
                 onSuccess: (result) => {
                   const summary = result.failed.length
