@@ -339,7 +339,7 @@ def _apply_vault_import(cur, review: dict) -> dict:
         """
         INSERT INTO lore_entities (slug, title, entity_type, source_path, source_hash, review_status)
         VALUES (%(slug)s, %(title)s, %(entity_type)s, %(source_path)s, %(source_hash)s, 'accepted')
-        ON CONFLICT (entity_type, slug) DO UPDATE SET
+        ON CONFLICT (slug) DO UPDATE SET
           title = EXCLUDED.title,
           entity_type = EXCLUDED.entity_type,
           source_path = EXCLUDED.source_path,
