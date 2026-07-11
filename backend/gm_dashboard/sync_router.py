@@ -541,6 +541,32 @@ def _apply_asset_import(cur, review: dict) -> dict:
     return {"applied": True, "asset_id": asset_id, "conflict_with": duplicate_of}
 
 
+def _apply_risk_import(cur, review: dict) -> dict:
+    payload = review["proposed_changes"] or {}
+    if not payload.get("title"):
+        raise HTTPException(status_code=409, detail="risk_import review has no title")
+
+    cur.execute(
+        """
+        INSERT INTO risks (title, description, likelihood, mitigation, contingency, status, last_reviewed_session)
+        VALUES (%(title)s, %(description)s, %(likelihood)s, %(mitigation)s, %(contingency)s, %(status)s, %(last_reviewed_session)s)
+        RETURNING id
+        """,
+        payload,
+    )
+    risk_id = str(cur.fetchone()["id"])
+
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted', applied_at = now(), updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {"applied": True, "risk_id": risk_id}
+
+
 def _apply_npc_import(cur, review: dict) -> dict:
     payload = review["proposed_changes"] or {}
     stats = payload.get("stats")
@@ -1002,6 +1028,12 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
 
             if review["review_type"] == "asset_import" and review["target_type"] == "asset":
                 result = _apply_asset_import(cur, review)
+                result = _finish_apply_job(cur, job_id, result)
+                conn.commit()
+                return result
+
+            if review["review_type"] == "risk_import" and review["target_type"] == "risk":
+                result = _apply_risk_import(cur, review)
                 result = _finish_apply_job(cur, job_id, result)
                 conn.commit()
                 return result
