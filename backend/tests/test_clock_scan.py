@@ -101,6 +101,27 @@ from gm_dashboard.api import app
 client = TestClient(app)
 
 
+def test_scan_clocks_creates_pending_reviews_and_skips_on_rescan(tmp_path, monkeypatch):
+    _write(
+        tmp_path,
+        "Campaign Management/01 - Live/Current Arc/The Training Arc/_Play Aids/Clocks and Beats.md",
+        CLOCKS_MD,
+    )
+    monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
+
+    res = client.post("/api/clocks/import/scan")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["new"] == 1
+    assert body["duplicate_pending"] == 0
+
+    res2 = client.post("/api/clocks/import/scan")
+    assert res2.status_code == 200
+    body2 = res2.json()
+    assert body2["new"] == 0
+    assert body2["duplicate_pending"] == 1
+
+
 def test_scan_and_apply_clock_import(tmp_path, monkeypatch):
     _write(
         tmp_path,
