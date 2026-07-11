@@ -241,6 +241,58 @@ def test_apply_ticket_import_without_ticket_payload_returns_409():
     assert res.status_code == 409
 
 
+def test_apply_ticket_import_with_missing_parent_returns_clean_409():
+    review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="child-ticket",
+        review_status="accepted",
+        proposed_changes={
+            "ticket": {
+                **FULL_TICKET_PAYLOAD,
+                "id": "child-ticket",
+                "parent_id": "parent-not-imported-yet",
+            }
+        },
+    )
+    res = client.post(f"/api/sync/reviews/{review['id']}/apply", json={"confirmation": True})
+    assert res.status_code == 409
+    assert "parent-not-imported-yet" in res.json()["detail"]
+
+    ticket = client.get("/api/tickets/child-ticket")
+    assert ticket.status_code == 404
+
+
+def test_apply_ticket_import_with_already_imported_parent_succeeds():
+    _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="parent-ticket",
+        review_status="accepted",
+        proposed_changes={"ticket": {**FULL_TICKET_PAYLOAD, "id": "parent-ticket"}},
+    )
+    parent_review = client.get("/api/sync/reviews?review_type=ticket_import&target_type=ticket")
+    parent_id = next(r["id"] for r in parent_review.json() if r["target_id"] == "parent-ticket")
+    client.post(f"/api/sync/reviews/{parent_id}/apply", json={"confirmation": True})
+
+    child_review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="child-ticket-2",
+        review_status="accepted",
+        proposed_changes={
+            "ticket": {
+                **FULL_TICKET_PAYLOAD,
+                "id": "child-ticket-2",
+                "parent_id": "parent-ticket",
+            }
+        },
+    )
+    res = client.post(f"/api/sync/reviews/{child_review['id']}/apply", json={"confirmation": True})
+    assert res.status_code == 200
+    assert res.json()["applied"] is True
+
+
 def test_apply_review_is_idempotent_and_returns_already_applied_result():
     review = _seed_review(
         review_type="ticket_import",

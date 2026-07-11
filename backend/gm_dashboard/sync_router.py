@@ -141,6 +141,18 @@ def _apply_ticket_import(cur, review: dict) -> dict:
     if not ticket.get("id"):
         raise HTTPException(status_code=409, detail="ticket_import review has no ticket payload")
 
+    parent_id = ticket.get("parent_id")
+    if parent_id:
+        cur.execute("SELECT 1 FROM tickets WHERE id = %s", (parent_id,))
+        if cur.fetchone() is None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"parent ticket '{parent_id}' has not been imported yet — "
+                    "accept and apply its ticket_import review first"
+                ),
+            )
+
     cur.execute(
         """
         INSERT INTO tickets (
