@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import yaml
 
+from . import services
 from .db.get_db import get_connection
 
 router = APIRouter()
@@ -110,7 +111,7 @@ def _slugify(title: str) -> str:
 
 
 def _vault_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return services.find_vault_root()
 
 
 def _ticket_dir(vault_root: Path) -> Path:
