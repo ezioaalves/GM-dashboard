@@ -1125,3 +1125,105 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
         raise
     finally:
         conn.close()
+
+
+@router.post("/sync/reviews/bulk-apply")
+def bulk_apply_sync_reviews() -> dict:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id FROM sync_reviews
+                WHERE review_status IN ('pending', 'accepted', 'merged')
+                  AND applied_at IS NULL
+                ORDER BY created_at
+                """
+            )
+            outstanding = [str(row["id"]) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    applied: list[dict] = []
+    last_error: dict[str, str] = {}
+    remaining = outstanding
+    passes = 0
+
+    while remaining:
+        passes += 1
+        next_remaining: list[str] = []
+        made_progress = False
+
+        for review_id in remaining:
+            conn = get_connection()
+            try:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    review = _review(cur, review_id)
+                    if review["review_status"] == "pending":
+                        cur.execute(
+                            """
+                            UPDATE sync_reviews
+                            SET review_status = 'accepted', decided_at = now(), updated_at = now()
+                            WHERE id = %s
+                            """,
+                            (review_id,),
+                        )
+                        review["review_status"] = "accepted"
+
+                    audit_payload = {
+                        "review_id": review["id"],
+                        "review_type": review["review_type"],
+                        "target_type": review["target_type"],
+                        "target_id": review["target_id"],
+                        "selected_change_ids": [],
+                        "target_surface": review["target_surface"],
+                    }
+                    job_id = _insert_apply_job(cur, review, audit_payload)
+                    result = _dispatch_apply(cur, review)
+                    if result is None:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"apply is not implemented for review_type={review['review_type']}",
+                        )
+                    _finish_apply_job(cur, job_id, result)
+                    conn.commit()
+                    applied.append(
+                        {
+                            "review_id": review["id"],
+                            "review_type": review["review_type"],
+                            "target_id": review["target_id"],
+                        }
+                    )
+                    made_progress = True
+            except HTTPException as exc:
+                conn.rollback()
+                last_error[review_id] = exc.detail
+                next_remaining.append(review_id)
+            finally:
+                conn.close()
+
+        if not made_progress:
+            break
+        remaining = next_remaining
+
+    failed = [
+        {
+            "review_id": review_id,
+            "review_type": None,
+            "target_id": None,
+            "error": last_error[review_id],
+        }
+        for review_id in remaining
+    ]
+    if failed:
+        conn = get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                for row in failed:
+                    review = _review(cur, row["review_id"])
+                    row["review_type"] = review["review_type"]
+                    row["target_id"] = review["target_id"]
+        finally:
+            conn.close()
+
+    return {"applied": applied, "failed": failed, "passes": passes}
