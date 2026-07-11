@@ -6,6 +6,7 @@ import {
   useDecideSyncReview,
   useApplySyncReview,
   useScanVault,
+  useBulkApplySyncReviews,
 } from "../api/sync";
 import type { SyncReview } from "../types/sync";
 
@@ -258,6 +259,7 @@ function ReviewCard({
 export function SyncCenter() {
   const { data: reviews = [] } = useSyncReviewsQuery();
   const scan = useScanVault();
+  const bulkApply = useBulkApplySyncReviews();
   const [filter, setFilter] = useState<Filter>("all");
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -303,6 +305,25 @@ export function SyncCenter() {
           </span>
         </div>
         <div className="header-actions">
+          <button
+            className="btn-ghost"
+            disabled={bulkApply.isPending || counts.pending + counts.decided === 0}
+            onClick={() => {
+              const outstanding = counts.pending + counts.decided;
+              if (!window.confirm(`Accept and apply ${outstanding} outstanding review(s)?`)) return;
+              bulkApply.mutate(undefined, {
+                onSuccess: (result) => {
+                  const summary = result.failed.length
+                    ? `${result.applied.length} applied, ${result.failed.length} need attention`
+                    : `${result.applied.length} applied`;
+                  showToast(summary);
+                },
+                onError: (err) => showToast(`Bulk apply failed: ${err.message}`),
+              });
+            }}
+          >
+            {bulkApply.isPending ? "Applying…" : "Accept all"}
+          </button>
           <button
             className="btn-ghost"
             disabled={scan.isPending}

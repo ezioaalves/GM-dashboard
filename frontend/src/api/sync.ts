@@ -73,6 +73,27 @@ export function useDecideSyncReview() {
   });
 }
 
+export interface BulkApplyResult {
+  applied: Array<{ review_id: string; review_type: string; target_id: string }>;
+  failed: Array<{ review_id: string; review_type: string; target_id: string; error: string }>;
+  passes: number;
+}
+
+export function useBulkApplySyncReviews() {
+  const qc = useQueryClient();
+  return useMutation<BulkApplyResult, Error, void>({
+    mutationFn: () =>
+      apiFetch("/api/sync/reviews/bulk-apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sync"] });
+    },
+  });
+}
+
 export function useApplySyncReview() {
   const qc = useQueryClient();
   return useMutation<Record<string, unknown>, Error, string>({
