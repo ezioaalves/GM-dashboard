@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from . import services
-from .db.get_db import get_connection
+from .db.get_db import engine_connection, get_connection
 from .system_enums import ASSET_STATUSES, DECISION_REVIEW_STATUSES
 
 router = APIRouter()
@@ -780,6 +780,28 @@ def _apply_clock_drift_adopt(cur, review: dict) -> dict:
     return {"applied": True, "action": "drift_adopt", "delta": delta, "fire_result": fire_result}
 
 
+_APPLY_HANDLERS: dict[tuple[str, str], Any] = {
+    ("ticket_import", "ticket"): _apply_ticket_import,
+    ("thread_import", "thread"): _apply_thread_import,
+    ("relationship_change", "relationship"): _apply_relationship_change,
+    ("vault_import", "entity"): _apply_vault_import,
+    ("asset_import", "asset"): _apply_asset_import,
+    ("risk_import", "risk"): _apply_risk_import,
+    ("clock_import", "clock"): _apply_clock_import,
+    ("scene_import", "scene"): _apply_scene_import,
+    ("npc_import", "npc"): _apply_npc_import,
+    ("clock_mirror", "clock"): _apply_clock_mirror,
+    ("clock_drift_adopt", "clock"): _apply_clock_drift_adopt,
+}
+
+
+def _dispatch_apply(cur, review: dict) -> dict | None:
+    handler = _APPLY_HANDLERS.get((review["review_type"], review["target_type"]))
+    if handler is None:
+        return None
+    return handler(cur, review)
+
+
 @router.get("/sync/reviews")
 def list_sync_reviews(
     review_status: str | None = None,
@@ -1073,88 +1095,28 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
                 return completed_result
 
             job_id = _insert_apply_job(cur, review, payload.audit_payload(review))
-            if review["review_type"] == "ticket_import" and review["target_type"] == "ticket":
-                result = _apply_ticket_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
+            result = _dispatch_apply(cur, review)
+            if result is None:
+                message = f"apply is not implemented for review_type={review['review_type']}"
+                cur.execute(
+                    """
+                    UPDATE sync_jobs
+                    SET status = 'blocked',
+                        error = %(error)s,
+                        error_code = 'unsupported_review_type',
+                        error_message = %(error)s,
+                        finished_at = now(),
+                        updated_at = now()
+                    WHERE id = %(id)s
+                    """,
+                    {"id": job_id, "error": message},
+                )
                 conn.commit()
-                return result
+                raise HTTPException(status_code=409, detail=message)
 
-            if review["review_type"] == "thread_import" and review["target_type"] == "thread":
-                result = _apply_thread_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "relationship_change" and review["target_type"] == "relationship":
-                result = _apply_relationship_change(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "vault_import" and review["target_type"] == "entity":
-                result = _apply_vault_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "asset_import" and review["target_type"] == "asset":
-                result = _apply_asset_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "risk_import" and review["target_type"] == "risk":
-                result = _apply_risk_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "clock_import" and review["target_type"] == "clock":
-                result = _apply_clock_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "scene_import" and review["target_type"] == "scene":
-                result = _apply_scene_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "npc_import" and review["target_type"] == "npc":
-                result = _apply_npc_import(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "clock_mirror" and review["target_type"] == "clock":
-                result = _apply_clock_mirror(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            if review["review_type"] == "clock_drift_adopt" and review["target_type"] == "clock":
-                result = _apply_clock_drift_adopt(cur, review)
-                result = _finish_apply_job(cur, job_id, result)
-                conn.commit()
-                return result
-
-            message = f"apply is not implemented for review_type={review['review_type']}"
-            cur.execute(
-                """
-                UPDATE sync_jobs
-                SET status = 'blocked',
-                    error = %(error)s,
-                    error_code = 'unsupported_review_type',
-                    error_message = %(error)s,
-                    finished_at = now(),
-                    updated_at = now()
-                WHERE id = %(id)s
-                """,
-                {"id": job_id, "error": message},
-            )
+            result = _finish_apply_job(cur, job_id, result)
             conn.commit()
-            raise HTTPException(status_code=409, detail=message)
+            return result
     except HTTPException:
         conn.rollback()
         raise
@@ -1163,3 +1125,120 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
         raise
     finally:
         conn.close()
+
+
+@router.post("/sync/reviews/bulk-apply")
+def bulk_apply_sync_reviews() -> dict:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id FROM sync_reviews
+                WHERE review_status IN ('pending', 'accepted', 'merged')
+                  AND applied_at IS NULL
+                ORDER BY created_at
+                """
+            )
+            outstanding = [str(row["id"]) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    applied: list[dict] = []
+    last_error: dict[str, str] = {}
+    remaining = outstanding
+    passes = 0
+
+    while remaining:
+        passes += 1
+        next_remaining: list[str] = []
+        made_progress = False
+
+        for review_id in remaining:
+            # Accept decision is its own short autocommit step so it persists
+            # across passes regardless of whether the apply attempt below
+            # succeeds — matches decide_sync_review's semantics (accepting a
+            # review is a standalone decision, not part of the apply attempt).
+            accept_conn = get_connection()
+            try:
+                with accept_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    review = _review(cur, review_id)
+                    if review["review_status"] == "pending":
+                        cur.execute(
+                            """
+                            UPDATE sync_reviews
+                            SET review_status = 'accepted', decided_at = now(), updated_at = now()
+                            WHERE id = %s
+                            """,
+                            (review_id,),
+                        )
+                        review["review_status"] = "accepted"
+            except HTTPException as exc:
+                last_error[review_id] = exc.detail
+                next_remaining.append(review_id)
+                continue
+            finally:
+                accept_conn.close()
+
+            # Job insert + apply dispatch + job finish share one real
+            # transaction so a failure rolls back cleanly, leaving no
+            # orphaned `running` sync_jobs row (see engine_connection()).
+            try:
+                with engine_connection() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        audit_payload = {
+                            "review_id": review["id"],
+                            "review_type": review["review_type"],
+                            "target_type": review["target_type"],
+                            "target_id": review["target_id"],
+                            "selected_change_ids": [],
+                            "target_surface": review["target_surface"],
+                        }
+                        job_id = _insert_apply_job(cur, review, audit_payload)
+                        result = _dispatch_apply(cur, review)
+                        if result is None:
+                            raise HTTPException(
+                                status_code=409,
+                                detail=f"apply is not implemented for review_type={review['review_type']}",
+                            )
+                        _finish_apply_job(cur, job_id, result)
+                        conn.commit()
+                        applied.append(
+                            {
+                                "review_id": review["id"],
+                                "review_type": review["review_type"],
+                                "target_id": review["target_id"],
+                            }
+                        )
+                        made_progress = True
+            except HTTPException as exc:
+                # engine_connection() already rolled back and closed the
+                # connection on this exception — nothing left to undo here.
+                last_error[review_id] = exc.detail
+                next_remaining.append(review_id)
+
+        if not made_progress:
+            break
+        remaining = next_remaining
+
+    failed = [
+        {
+            "review_id": review_id,
+            "review_type": None,
+            "target_id": None,
+            "error": last_error[review_id],
+        }
+        for review_id in remaining
+    ]
+    if failed:
+        conn = get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                for row in failed:
+                    review = _review(cur, row["review_id"])
+                    row["review_type"] = review["review_type"]
+                    row["target_id"] = review["target_id"]
+        finally:
+            conn.close()
+
+    return {"applied": applied, "failed": failed, "passes": passes}

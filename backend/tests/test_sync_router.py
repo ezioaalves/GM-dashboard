@@ -841,3 +841,179 @@ def test_sync_freshness_surfaces_unconfigured_foundry_integration(monkeypatch):
     integration_item = by_kind_and_id[("integration", "foundry-unconfigured")]
     assert integration_item["priority"] == "high"
     assert integration_item["state"] == "unconfigured"
+
+
+def test_bulk_apply_accepts_and_applies_mixed_pending_review_types():
+    risk_review = _seed_review(
+        review_type="risk_import",
+        target_type="risk",
+        review_status="pending",
+        proposed_changes={
+            "title": "Bulk test risk",
+            "description": "",
+            "likelihood": "medium",
+            "mitigation": "",
+            "contingency": "",
+            "status": "open",
+            "last_reviewed_session": None,
+        },
+    )
+    ticket_review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="bulk-test-ticket",
+        review_status="pending",
+        proposed_changes={"ticket": {**FULL_TICKET_PAYLOAD, "id": "bulk-test-ticket"}},
+    )
+
+    res = client.post("/api/sync/reviews/bulk-apply", json={})
+    assert res.status_code == 200
+    body = res.json()
+    applied_ids = {row["review_id"] for row in body["applied"]}
+    assert risk_review["id"] in applied_ids
+    assert ticket_review["id"] in applied_ids
+    assert body["failed"] == []
+
+    ticket = client.get("/api/tickets/bulk-test-ticket")
+    assert ticket.status_code == 200
+
+
+def test_bulk_apply_resolves_parent_child_ticket_ordering_in_one_call():
+    # Child seeded before its parent exists anywhere (not in `tickets`, not yet applied)
+    # to prove the retry-until-no-progress loop — not insertion order — resolves this.
+    child_review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="bulk-child",
+        review_status="pending",
+        proposed_changes={
+            "ticket": {**FULL_TICKET_PAYLOAD, "id": "bulk-child", "parent_id": "bulk-parent"}
+        },
+    )
+    parent_review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="bulk-parent",
+        review_status="pending",
+        proposed_changes={"ticket": {**FULL_TICKET_PAYLOAD, "id": "bulk-parent"}},
+    )
+
+    res = client.post("/api/sync/reviews/bulk-apply", json={})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["passes"] >= 2
+    applied_ids = {row["review_id"] for row in body["applied"]}
+    assert child_review["id"] in applied_ids
+    assert parent_review["id"] in applied_ids
+    assert body["failed"] == []
+
+    assert client.get("/api/tickets/bulk-child").status_code == 200
+    assert client.get("/api/tickets/bulk-parent").status_code == 200
+
+
+def test_bulk_apply_reports_genuine_failure_without_blocking_others():
+    malformed_review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        review_status="pending",
+        proposed_changes={},
+    )
+    ok_review = _seed_review(
+        review_type="risk_import",
+        target_type="risk",
+        review_status="pending",
+        proposed_changes={
+            "title": "Unblocked risk",
+            "description": "",
+            "likelihood": "low",
+            "mitigation": "",
+            "contingency": "",
+            "status": "open",
+            "last_reviewed_session": None,
+        },
+    )
+
+    res = client.post("/api/sync/reviews/bulk-apply", json={})
+    assert res.status_code == 200
+    body = res.json()
+    applied_ids = {row["review_id"] for row in body["applied"]}
+    failed_ids = {row["review_id"] for row in body["failed"]}
+    assert ok_review["id"] in applied_ids
+    assert malformed_review["id"] in failed_ids
+    failed_row = next(r for r in body["failed"] if r["review_id"] == malformed_review["id"])
+    assert "ticket payload" in failed_row["error"]
+
+
+def test_bulk_apply_rerun_retries_only_previously_failed_reviews():
+    child_review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="rerun-child",
+        review_status="pending",
+        proposed_changes={
+            "ticket": {**FULL_TICKET_PAYLOAD, "id": "rerun-child", "parent_id": "rerun-parent"}
+        },
+    )
+    first = client.post("/api/sync/reviews/bulk-apply", json={})
+    assert first.status_code == 200
+    first_body = first.json()
+    assert child_review["id"] in {r["review_id"] for r in first_body["failed"]}
+    # child review is now `accepted` but unapplied; re-check its status directly
+    review_detail = client.get(f"/api/sync/reviews/{child_review['id']}")
+    assert review_detail.json()["review_status"] == "accepted"
+
+    _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="rerun-parent",
+        review_status="pending",
+        proposed_changes={"ticket": {**FULL_TICKET_PAYLOAD, "id": "rerun-parent"}},
+    )
+    second = client.post("/api/sync/reviews/bulk-apply", json={})
+    assert second.status_code == 200
+    second_body = second.json()
+    applied_ids = {row["review_id"] for row in second_body["applied"]}
+    assert child_review["id"] in applied_ids
+    assert client.get("/api/tickets/rerun-child").status_code == 200
+
+
+def test_bulk_apply_permanent_failure_leaves_no_orphaned_running_job():
+    # Parent is never seeded, so this review fails on every pass — it stays
+    # in `remaining` until bulk-apply gives up. Before the fix, each failed
+    # attempt's `_insert_apply_job` INSERT committed immediately (autocommit
+    # connection) and the subsequent `conn.rollback()` was a no-op, leaving
+    # a `status='running'` sync_jobs row that nothing ever finalized.
+    orphan_review = _seed_review(
+        review_type="ticket_import",
+        target_type="ticket",
+        target_id="orphan-child",
+        review_status="pending",
+        proposed_changes={
+            "ticket": {
+                **FULL_TICKET_PAYLOAD,
+                "id": "orphan-child",
+                "parent_id": "orphan-parent-never-seeded",
+            }
+        },
+    )
+
+    res = client.post("/api/sync/reviews/bulk-apply", json={})
+    assert res.status_code == 200
+    body = res.json()
+    failed_ids = {row["review_id"] for row in body["failed"]}
+    assert orphan_review["id"] in failed_ids
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT status FROM sync_jobs WHERE review_id = %s",
+                (orphan_review["id"],),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    assert all(row["status"] != "running" for row in rows), (
+        f"orphaned running sync_jobs row(s) left behind: {rows}"
+    )
