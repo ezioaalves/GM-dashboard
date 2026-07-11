@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
+import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session as DBSession
 
-from .db.get_db import get_db
+from . import services
+from .db.get_db import get_connection, get_db
 from .db.models import LoreAsset, Scene
+from .event_scan import scan_events
 from .foundry_journals import create_journal, render_scene_journal_html, update_journal
 from .relay_client import RelayError, load_relay_client
 
@@ -349,6 +352,20 @@ def delete_scene(scene_id: int, db: DBSession = Depends(get_db)) -> dict:
     db.delete(scene)
     db.commit()
     return {"deleted": True}
+
+
+@router.post("/scenes/import/scan")
+def scan_scenes_import(dry_run: bool = False) -> dict:
+    vault_root = services.find_vault_root()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_events(vault_root, cur, dry_run=dry_run)
+            if not dry_run:
+                conn.commit()
+            return summary
+    finally:
+        conn.close()
 
 
 class SceneForeignExportRequest(BaseModel):

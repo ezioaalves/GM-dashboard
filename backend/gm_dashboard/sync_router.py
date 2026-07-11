@@ -593,6 +593,39 @@ def _apply_clock_import(cur, review: dict) -> dict:
     return {"applied": True, "clock_id": clock_id}
 
 
+def _apply_scene_import(cur, review: dict) -> dict:
+    payload = review["proposed_changes"] or {}
+    if not payload.get("source_path"):
+        raise HTTPException(status_code=409, detail="scene_import review has no source_path")
+
+    cur.execute(
+        """
+        INSERT INTO scenes (title, placement, scene_type, purpose, body, clock, source_path, source_hash)
+        VALUES (%(title)s, %(placement)s, %(scene_type)s, %(purpose)s, %(body)s, %(clock)s, %(source_path)s, %(source_hash)s)
+        ON CONFLICT (source_path) WHERE source_path <> '' DO UPDATE SET
+          title = EXCLUDED.title,
+          purpose = EXCLUDED.purpose,
+          body = EXCLUDED.body,
+          clock = EXCLUDED.clock,
+          source_hash = EXCLUDED.source_hash,
+          updated_at = now()
+        RETURNING id
+        """,
+        payload,
+    )
+    scene_id = str(cur.fetchone()["id"])
+
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted', applied_at = now(), updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {"applied": True, "scene_id": scene_id}
+
+
 def _apply_npc_import(cur, review: dict) -> dict:
     payload = review["proposed_changes"] or {}
     stats = payload.get("stats")
@@ -1066,6 +1099,12 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
 
             if review["review_type"] == "clock_import" and review["target_type"] == "clock":
                 result = _apply_clock_import(cur, review)
+                result = _finish_apply_job(cur, job_id, result)
+                conn.commit()
+                return result
+
+            if review["review_type"] == "scene_import" and review["target_type"] == "scene":
+                result = _apply_scene_import(cur, review)
                 result = _finish_apply_job(cur, job_id, result)
                 conn.commit()
                 return result
