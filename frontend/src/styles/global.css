@@ -103,7 +103,7 @@ button {
 }
 
 .sidebar-item:hover {
-  background: var(--surface);
+  background: var(--surface-hover);
   color: var(--text-high);
 }
 
@@ -833,7 +833,7 @@ button {
 .modal {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   max-width: 100%;
   max-height: 100%;
   overflow-y: auto;
@@ -956,16 +956,16 @@ button {
   background: var(--red-tint-bg);
 }
 .type-badge--soft {
-  color: var(--amber-bright);
-  background: var(--amber-tint-bg);
+  color: var(--text-muted);
+  background: var(--surface-hover);
 }
 .type-badge--spotlight {
   color: var(--azure-bright);
   background: var(--azure-tint-bg);
 }
 .type-badge--bridge {
-  color: var(--teal-bright);
-  background: var(--teal-tint-bg);
+  color: var(--purple-bright);
+  background: var(--purple-tint-bg);
 }
 .type-badge--added,
 .type-badge--cut,
@@ -1001,7 +1001,8 @@ button {
   background: var(--amber-tint-bg);
   border: 1px solid var(--amber-tint-border);
 }
-.tier-badge--false_lead {
+.tier-badge--false_lead,
+.tier-badge--false-lead {
   color: var(--red-bright);
   background: var(--red-tint-bg);
   border: 1px solid var(--red-tint-border);
@@ -1362,16 +1363,16 @@ button.chip {
 }
 
 .scene-card--hard {
-  border-left: 3px solid var(--red-bright);
+  border-left: 3px solid var(--red);
 }
 .scene-card--soft {
-  border-left: 3px solid var(--amber-bright);
+  border-left: 3px solid var(--amber);
 }
 .scene-card--spotlight {
   border-left: 3px solid var(--azure);
 }
 .scene-card--bridge {
-  border-left: 3px solid var(--teal);
+  border-left: 3px solid var(--purple);
 }
 .scene-card--added,
 .scene-card--cut,
@@ -2106,9 +2107,9 @@ button.chip {
   border: 1px solid var(--red-tint-border);
 }
 .type-chip--soft {
-  color: var(--azure-bright);
-  background: var(--azure-tint-bg);
-  border: 1px solid var(--azure-tint-border);
+  color: var(--text-muted);
+  background: var(--surface-hover);
+  border: 1px solid var(--border-strong);
 }
 .type-chip--added {
   color: var(--teal-bright);
@@ -2121,12 +2122,16 @@ button.chip {
   border: 1px solid var(--amber-tint-border);
 }
 .type-chip--spotlight {
-  color: var(--teal-bright);
-  background: var(--teal-tint-bg);
-  border: 1px solid var(--teal-tint-border);
+  color: var(--azure-bright);
+  background: var(--azure-tint-bg);
+  border: 1px solid var(--azure-tint-border);
 }
-.type-chip--cut,
 .type-chip--bridge {
+  color: var(--purple-bright);
+  background: var(--purple-tint-bg);
+  border: 1px solid var(--purple-tint-border);
+}
+.type-chip--cut {
   color: var(--text-dim);
   background: var(--surface-raised);
   border: 1px solid var(--border);
@@ -4076,7 +4081,7 @@ select.input {
 }
 
 .generator-entry:hover {
-  background: var(--surface-raised);
+  background: var(--surface-hover);
 }
 
 .generator-entry-n {

@@ -21,11 +21,11 @@ import { useFoundryStatusQuery } from "./api/cockpit";
 import { useSessionsQuery } from "./api/sessions";
 import type { Session } from "./types/session";
 
-const PAGE_TITLES: Record<Exclude<PageKey, "cockpit">, string> = {
+// "generator" is intercepted in navigate() and never becomes the page state.
+const PAGE_TITLES: Record<Exclude<PageKey, "cockpit" | "generator">, string> = {
   adventures: "Adventures",
   sessions: "Sessions",
   "scene-deck": "Scene Deck",
-  generator: "Generator",
   threads: "Threads",
   "pc-lanes": "PC Lanes",
   risks: "Risk Register",
@@ -109,7 +109,7 @@ export function App() {
       ) : page === "library-search" ? (
         <AssetsSearch onNavigate={navigate} />
       ) : (
-        <Placeholder title={PAGE_TITLES[page]} />
+        <Placeholder title={PAGE_TITLES[page as Exclude<PageKey, "cockpit" | "generator">]} />
       )}
       {genOpen && <GeneratorPanel onClose={() => setGenOpen(false)} />}
     </AppShell>

@@ -1,50 +1,58 @@
 :root {
-  /* Neutrals — derived from Deep Indigo / Iron Black / Weathered Steel
-     (Kaihou Visual Identity Kit, "Silk, Steel & Seal") */
-  --base: #10152a;
-  --surface: #1f2a44;
-  --surface-raised: #29365a;
-  --border: #333d55;
-  --border-strong: #5f646d;
+  /* Neutrals — Claude Design "GM Dashboard" identity (dc mockups).
+     Cards (--surface) sit on lanes/sidebar (--surface-raised) and are
+     intentionally LIGHTER than them — do not reorder. */
+  --base: #0c0e12;
+  --surface: #11141a;
+  --surface-raised: #0f1218;
+  --surface-hover: #161b23;
+  --surface-active: #1a2333;
+  --border: #1d2430;
+  --border-strong: #232c3b;
 
-  /* Weathered Steel — general interactive chrome + "stale" severity */
-  --azure: #5f646d;
-  --azure-bright: #8b909a;
-  --azure-tint-bg: #232732;
-  --azure-tint-border: #3a3f4b;
+  /* Azure — primary actions, links, SPOTLIGHT scenes */
+  --azure: #5aa2e8;
+  --azure-bright: #8cc0f2;
+  --azure-tint-bg: #1a2333;
+  --azure-tint-border: #2a3d55;
 
-  /* Wax Ivory — "fresh" severity + positive/secondary chrome */
-  --teal: #d7c8a3;
-  --teal-bright: #e9ddc0;
-  --teal-tint-bg: #2e2a1e;
-  --teal-tint-border: #4a4530;
+  /* Teal — positive / "fresh" / CORE clues */
+  --teal: #3fb8a8;
+  --teal-bright: #7dd8c8;
+  --teal-tint-bg: #132a24;
+  --teal-tint-border: #1f4a3e;
 
-  /* Corruption Green — "decision needed" severity + attention badge */
-  --amber: #3e5b4f;
-  --amber-bright: #6e8c7e;
-  --amber-tint-bg: #16211c;
-  --amber-tint-border: #24362e;
+  /* Amber — attention / "decision needed" / OPTIONAL clues */
+  --amber: #e8b56b;
+  --amber-bright: #f0c98a;
+  --amber-tint-bg: #3a2a14;
+  --amber-tint-border: #5c451f;
 
-  /* Dried Blood — "conflict" severity, warnings */
-  --red: #6b1f28;
-  --red-bright: #9c4650;
-  --red-tint-bg: #2a1013;
-  --red-tint-border: #451a20;
+  /* Red — conflict, warnings, HARD scenes, FALSE LEAD clues */
+  --red: #e85a75;
+  --red-bright: #f08a9b;
+  --red-tint-bg: #3a1620;
+  --red-tint-border: #5c2433;
 
-  --text-high: #edeae2;
-  --text-body: #c7c2b8;
-  --text-muted: #a6a29a;
-  --text-dim: #83807a;
-  --text-faint: #5f5b55;
+  /* Purple — BRIDGE scenes */
+  --purple: #8b7fd6;
+  --purple-bright: #c3b8f0;
+  --purple-tint-bg: #251f3a;
+  --purple-tint-border: #3a3159;
 
-  /* Kit says avoid rounded modern UX cards, but prefers circles/seals —
-     shrink rectangular radii, keep the pill radius for badges/rings/dots. */
-  --radius-sm: 2px;
-  --radius-md: 3px;
-  --radius-lg: 4px;
+  --text-high: #eef2f7;
+  --text-body: #c9d1dc;
+  --text-muted: #aeb8c6;
+  --text-dim: #8b95a5;
+  --text-faint: #5c6675;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
   --radius-pill: 99px;
 
-  --font-display: "Cinzel", serif;
-  --font-body: "Noto Serif JP", serif;
+  --font-display: "IBM Plex Sans", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", monospace;
 }
