@@ -45,14 +45,15 @@ export function useSyncReviewDetailQuery(id: string | null) {
   });
 }
 
-/** Vault scans that feed the review inbox (lore + assets). */
+/** Vault scans that feed the review inbox (lore + assets + sessions). */
 export function useScanVault() {
   const qc = useQueryClient();
-  return useMutation<{ lore: unknown; assets: unknown }, Error, void>({
+  return useMutation<{ lore: unknown; assets: unknown; sessions: unknown }, Error, void>({
     mutationFn: async () => {
       const lore = await apiFetch("/api/lore/import/scan", { method: "POST" });
       const assets = await apiFetch("/api/assets/import/scan", { method: "POST" });
-      return { lore, assets };
+      const sessions = await apiFetch("/api/sessions/import/scan", { method: "POST" });
+      return { lore, assets, sessions };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sync"] }),
   });

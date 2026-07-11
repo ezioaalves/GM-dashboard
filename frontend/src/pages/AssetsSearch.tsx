@@ -3,8 +3,37 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Field } from "../components/Modal";
 import { PillSelect } from "../components/PillSelect";
 import type { PageKey } from "../components/Sidebar";
-import { useAssetsQuery, usePatchAsset, type LoreAsset } from "../api/lore";
+import { assetFileUrl, useAssetsQuery, usePatchAsset, type LoreAsset } from "../api/lore";
 import { useWriteVaultMarkdown } from "../api/sessions";
+
+const UNAVAILABLE_MIRROR_STATES = new Set(["missing_source", "missing_mirror", "failed"]);
+
+function AssetThumb({ asset, className }: { asset: LoreAsset; className: string }) {
+  const [errored, setErrored] = useState(false);
+  const canShowImage = !UNAVAILABLE_MIRROR_STATES.has(asset.mirror_state) && !errored;
+
+  if (canShowImage) {
+    return (
+      <div className={className}>
+        <img
+          src={assetFileUrl(asset.id)}
+          alt={asset.title || asset.source_path}
+          loading="lazy"
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          onError={() => setErrored(true)}
+        />
+      </div>
+    );
+  }
+  return (
+    <div className={className}>
+      <span className="mono-inline" style={{ fontSize: 10, color: "var(--text-faint)" }}>
+        {asset.asset_type}
+        {asset.width && asset.height ? ` · ${asset.width}×${asset.height}` : ""}
+      </span>
+    </div>
+  );
+}
 
 const MIRROR_FILTERS = ["all", "mirrored", "not_mirrored", "stale_mirror", "failed"] as const;
 const STATUS_FILTERS = ["all", "current", "variant", "rejected"] as const;
@@ -55,12 +84,7 @@ function AssetDrawer({
         </div>
 
         <div className="editor-drawer-body">
-          <div className="asset-thumb-lg">
-            <span className="mono-inline" style={{ color: "var(--text-faint)" }}>
-              {asset.asset_type}
-              {asset.width && asset.height ? ` · ${asset.width}×${asset.height}` : ""}
-            </span>
-          </div>
+          <AssetThumb asset={asset} className="asset-thumb-lg" />
 
           <div className="adventure-summary-grid">
             <Field label="STATUS">
@@ -292,11 +316,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
           <div className="asset-grid">
             {filtered.map((asset) => (
               <button className="asset-card" key={asset.id} onClick={() => setDrawerId(asset.id)}>
-                <div className="asset-thumb">
-                  <span className="mono-inline" style={{ fontSize: 10, color: "var(--text-faint)" }}>
-                    {asset.asset_type}
-                  </span>
-                </div>
+                <AssetThumb asset={asset} className="asset-thumb" />
                 <div className="asset-card-body">
                   <span className="asset-card-name">{asset.title || asset.source_path}</span>
                   <div className="deck-card-badges">

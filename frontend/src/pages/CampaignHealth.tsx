@@ -184,6 +184,46 @@ export function CampaignHealth() {
             Threads · PC Lanes · Risks · Feedback — the follow-up phase
           </span>
         </div>
+        <div className="header-actions">
+          {tab === "threads" && (
+            <button
+              className="btn btn-primary"
+              onClick={() =>
+                setModal({ kind: "thread", id: null, data: { id: "", title: "", priority: "med", pressure: "", stakes: "", next_move: "" } })
+              }
+            >
+              ＋ New thread
+            </button>
+          )}
+          {tab === "risks" && (
+            <button
+              className="btn btn-primary"
+              onClick={() =>
+                setModal({
+                  kind: "risk",
+                  id: null,
+                  data: { title: "", likelihood: "low", status: "open", mitigation: "", contingency: "", related_thread_id: "" },
+                })
+              }
+            >
+              ＋ New risk
+            </button>
+          )}
+          {tab === "feedback" && (
+            <button
+              className="btn btn-primary"
+              onClick={() =>
+                setModal({
+                  kind: "feedback",
+                  id: null,
+                  data: { cadence: "quick_check", session_number: "", more_of: "", less_of: "", clarify: "", notes: "" },
+                })
+              }
+            >
+              ＋ New feedback entry
+            </button>
+          )}
+        </div>
       </header>
 
       {/* summary strip */}
@@ -303,15 +343,6 @@ export function CampaignHealth() {
               </div>
             );
           })}
-          <button
-            className="board-new-scene"
-            style={{ marginLeft: 0, width: "fit-content" }}
-            onClick={() =>
-              setModal({ kind: "thread", id: null, data: { id: "", title: "", priority: "med", pressure: "", stakes: "", next_move: "" } })
-            }
-          >
-            ＋ New thread
-          </button>
         </div>
       )}
 
@@ -456,19 +487,6 @@ export function CampaignHealth() {
               </div>
             );
           })}
-          <button
-            className="board-new-scene"
-            style={{ marginLeft: 0, width: "fit-content" }}
-            onClick={() =>
-              setModal({
-                kind: "risk",
-                id: null,
-                data: { title: "", likelihood: "low", status: "open", mitigation: "", contingency: "", related_thread_id: "" },
-              })
-            }
-          >
-            ＋ New risk
-          </button>
         </div>
       )}
 
@@ -609,19 +627,6 @@ export function CampaignHealth() {
               </div>
             );
           })}
-          <button
-            className="board-new-scene"
-            style={{ marginLeft: 0, width: "fit-content" }}
-            onClick={() =>
-              setModal({
-                kind: "feedback",
-                id: null,
-                data: { cadence: "quick_check", session_number: "", more_of: "", less_of: "", clarify: "", notes: "" },
-              })
-            }
-          >
-            ＋ New feedback entry
-          </button>
         </div>
       )}
 

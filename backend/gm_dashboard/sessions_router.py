@@ -9,9 +9,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.exc import IntegrityError
 
-from .db.get_db import get_db
+import psycopg2.extras
+
+from .db.get_db import get_connection, get_db
 from .db.models import Session, Scene, SessionNote, SessionAdventure, Adventure
-from .services import slugify
+from .services import find_vault_root, slugify
+from .session_scan import scan_sessions
 from .system_enums import FRESHNESS_STATES, REVIEW_STATUSES, SESSION_STATUSES, VISIBILITIES
 
 router = APIRouter()
@@ -696,3 +699,17 @@ def generate_session_note(
     db.commit()
     db.refresh(note)
     return _note_to_dict(note)
+
+
+@router.post("/sessions/import/scan")
+def scan_sessions_import(dry_run: bool = False) -> dict:
+    vault_root = find_vault_root()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_sessions(vault_root, cur, dry_run=dry_run)
+            if not dry_run:
+                conn.commit()
+            return summary
+    finally:
+        conn.close()

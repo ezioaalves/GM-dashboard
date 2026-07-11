@@ -638,6 +638,82 @@ def _apply_scene_import(cur, review: dict) -> dict:
     return {"applied": True, "scene_id": scene_id}
 
 
+def _apply_session_import(cur, review: dict) -> dict:
+    payload = review["proposed_changes"] or {}
+    session_fields = payload.get("session") or {}
+    note_fields = payload.get("session_note") or {}
+    if session_fields.get("number") is None:
+        raise HTTPException(status_code=409, detail="session_import review has no session number")
+
+    cur.execute(
+        """
+        INSERT INTO sessions (number, name, date, summary, source_path, source_hash)
+        VALUES (%(number)s, %(name)s, %(date)s, %(summary)s, %(source_path)s, %(source_hash)s)
+        ON CONFLICT (number) DO UPDATE SET
+          name = EXCLUDED.name,
+          date = EXCLUDED.date,
+          summary = EXCLUDED.summary,
+          source_path = EXCLUDED.source_path,
+          source_hash = EXCLUDED.source_hash,
+          updated_at = now()
+        RETURNING id
+        """,
+        {
+            "number": session_fields["number"],
+            "name": session_fields.get("name") or "",
+            "date": session_fields.get("date"),
+            "summary": session_fields.get("summary") or "",
+            "source_path": payload.get("source_path") or "",
+            "source_hash": payload.get("source_hash") or "",
+        },
+    )
+    session_id = cur.fetchone()["id"]
+
+    cur.execute(
+        """
+        INSERT INTO session_notes (
+          session_id, scenes, npcs_present, clues_discovered, threads_touched,
+          unresolved_questions, next_session_hook, memory, markdown
+        )
+        VALUES (
+          %(session_id)s, %(scenes)s, %(npcs_present)s, %(clues_discovered)s, %(threads_touched)s,
+          %(unresolved_questions)s, %(next_session_hook)s, %(memory)s, %(markdown)s
+        )
+        ON CONFLICT (session_id) DO UPDATE SET
+          scenes = EXCLUDED.scenes,
+          npcs_present = EXCLUDED.npcs_present,
+          clues_discovered = EXCLUDED.clues_discovered,
+          threads_touched = EXCLUDED.threads_touched,
+          unresolved_questions = EXCLUDED.unresolved_questions,
+          next_session_hook = EXCLUDED.next_session_hook,
+          memory = EXCLUDED.memory,
+          markdown = EXCLUDED.markdown,
+          updated_at = now()
+        """,
+        {
+            "session_id": session_id,
+            "scenes": note_fields.get("scenes") or [],
+            "npcs_present": note_fields.get("npcs_present") or [],
+            "clues_discovered": note_fields.get("clues_discovered") or [],
+            "threads_touched": note_fields.get("threads_touched") or [],
+            "unresolved_questions": note_fields.get("unresolved_questions") or [],
+            "next_session_hook": note_fields.get("next_session_hook") or "",
+            "memory": note_fields.get("memory") or "",
+            "markdown": note_fields.get("markdown") or "",
+        },
+    )
+
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted', applied_at = now(), updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {"applied": True, "session_id": str(session_id)}
+
+
 def _apply_npc_import(cur, review: dict) -> dict:
     payload = review["proposed_changes"] or {}
     stats = payload.get("stats")
@@ -789,6 +865,7 @@ _APPLY_HANDLERS: dict[tuple[str, str], Any] = {
     ("risk_import", "risk"): _apply_risk_import,
     ("clock_import", "clock"): _apply_clock_import,
     ("scene_import", "scene"): _apply_scene_import,
+    ("session_import", "session"): _apply_session_import,
     ("npc_import", "npc"): _apply_npc_import,
     ("clock_mirror", "clock"): _apply_clock_mirror,
     ("clock_drift_adopt", "clock"): _apply_clock_drift_adopt,

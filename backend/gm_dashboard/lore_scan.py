@@ -42,6 +42,10 @@ def classify_entity_type(rel_path: str) -> str:
     normalized = rel_path.replace("\\", "/")
     for prefix, entity_type in ENTITY_TYPE_PREFIXES:
         if normalized.startswith(prefix):
+            if entity_type == "pc" and not normalized.endswith("Sheet.md"):
+                # PC folders also hold notes/bio files alongside the sheet;
+                # only the sheet is the canonical PC record.
+                return "article"
             return entity_type
     return "article"
 
