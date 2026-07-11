@@ -7,6 +7,7 @@ from uuid import UUID
 
 import psycopg2.extras
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from .db.get_db import get_connection
@@ -1370,6 +1371,45 @@ def get_asset(asset_id: UUID) -> dict:
             return _asset_row(row)
     finally:
         conn.close()
+
+
+_ASSET_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+
+
+@router.get("/assets/{asset_id}/file")
+def get_asset_file(asset_id: UUID) -> FileResponse:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT source_path, source_hash, mirror_state FROM lore_assets WHERE id = %s",
+                (str(asset_id),),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    path = services.find_vault_root() / row["source_path"]
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Asset file missing on disk (mirror_state={row['mirror_state']})",
+        )
+
+    media_type = _ASSET_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
+    headers = {"Cache-Control": "public, max-age=3600"}
+    if row["source_hash"]:
+        headers["ETag"] = row["source_hash"]
+    return FileResponse(path, media_type=media_type, headers=headers)
 
 
 @router.post("/assets", status_code=201)

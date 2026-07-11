@@ -81,6 +81,10 @@ export interface LoreAsset {
   freshness_state: string;
 }
 
+export function assetFileUrl(id: string): string {
+  return `/api/assets/${id}/file`;
+}
+
 export interface LoreEntityDetail extends LoreEntity {
   aliases: LoreAlias[];
   sections: LoreSection[];

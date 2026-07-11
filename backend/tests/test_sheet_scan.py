@@ -186,6 +186,29 @@ def test_sync_pc_sheets_creates_row_for_pc_entity_type(tmp_path):
     assert pc["stats"]["classes"][0]["name"] == "Fast Paragon"
 
 
+def test_sync_pc_sheets_ignores_non_sheet_files_in_pc_folder(tmp_path):
+    # PC folders also hold notes/bio files alongside the sheet; even if one
+    # slipped through classification as entity_type='pc', sync must not treat
+    # it as a PC row.
+    _write_sheet(tmp_path, "Lore/Player_Characters/Suigin/Suigin_Sheet.md", PC_SHEET)
+    _write_sheet(tmp_path, "Lore/Player_Characters/Suigin/Suigin_Notes.md", "# Notes\nbody")
+    _insert_entity("pc", "suigin", "Suigin", "Lore/Player_Characters/Suigin/Suigin_Sheet.md")
+    _insert_entity("pc", "suigin-notes", "Suigin Notes", "Lore/Player_Characters/Suigin/Suigin_Notes.md")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = sync_pc_sheets(tmp_path, cur)
+            cur.execute("SELECT slug FROM pcs")
+            slugs = [row["slug"] for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    assert summary["scanned"] == 1
+    assert summary["synced"] == 1
+    assert slugs == ["suigin"]
+
+
 def test_sync_npc_sheets_is_idempotent(tmp_path):
     _write_sheet(tmp_path, "Lore/NPCs/Hayai_Sheet.md", NPC_SHEET)
     _insert_entity("npc", "hayai", "Dattoumaru Hayai", "Lore/NPCs/Hayai_Sheet.md")

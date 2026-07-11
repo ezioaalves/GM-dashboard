@@ -17,10 +17,14 @@ def _sync_sheets(vault_root: Path, cur, entity_type: str) -> dict:
     synced = 0
     errors: list[dict] = []
 
+    # Defensive belt-and-suspenders: PC folders also hold notes/bio files, so
+    # even if a stray non-sheet entity slips through classification, only
+    # treat the actual character sheet as the PC record.
+    sheet_filter = " AND source_path LIKE '%%Sheet.md'" if entity_type == "pc" else ""
     cur.execute(
-        """
+        f"""
         SELECT id, slug, title, source_path FROM lore_entities
-        WHERE entity_type = %s AND review_status = 'accepted'
+        WHERE entity_type = %s AND review_status = 'accepted'{sheet_filter}
         ORDER BY slug
         """,
         (entity_type,),
