@@ -419,6 +419,30 @@ def test_apply_vault_import_creates_entity_sections_and_relationships():
     assert entity_body["relationships"][0]["unresolved_target"] == "Someone Else"
 
 
+def test_lore_entities_slug_constraint_matches_apply_vault_import_sql():
+    """Regression guard: _apply_vault_import's `ON CONFLICT (slug)` requires an
+    exact unique constraint on (slug) alone. A prior schema drift (an
+    undocumented `UNIQUE (entity_type, slug)` constraint that no migration or
+    model ever defined) made local dev DBs silently diverge from production,
+    where only the plain `slug` constraint from migration 004 / models.py
+    exists — so this bug passed locally and 500'd on every real apply."""
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT conname FROM pg_constraint
+                WHERE conrelid = 'lore_entities'::regclass AND contype = 'u'
+                """
+            )
+            constraint_names = {row[0] for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+    assert "lore_entities_slug_key" in constraint_names
+    assert "lore_entities_entity_type_slug_key" not in constraint_names
+
+
 def test_apply_vault_import_without_entity_payload_returns_409():
     review = _seed_review(
         review_type="vault_import",
