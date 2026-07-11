@@ -44,11 +44,11 @@ export interface LoreAlias {
 
 export interface LoreSection {
   id: string;
+  source_id: string;
   entity_id: string | null;
   heading: string;
-  content?: string;
-  text?: string;
-  body?: string;
+  body: string;
+  section_order: number;
 }
 
 export interface LoreRelationship {
@@ -151,6 +151,38 @@ export function useAddLoreAlias() {
   const qc = useQueryClient();
   return useMutation<LoreAlias, Error, { entityId: string; alias: string }>({
     mutationFn: ({ entityId, alias }) => jsonPost(`/api/lore/entities/${entityId}/aliases`, { alias }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["lore"] }),
+  });
+}
+
+export function useAddLoreSection() {
+  const qc = useQueryClient();
+  return useMutation<
+    LoreSection,
+    Error,
+    { entityId: string; source_id: string; heading: string; body: string; section_order?: number }
+  >({
+    mutationFn: ({ entityId, ...data }) => jsonPost(`/api/lore/entities/${entityId}/sections`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["lore"] }),
+  });
+}
+
+export function usePatchLoreSection() {
+  const qc = useQueryClient();
+  return useMutation<
+    LoreSection,
+    Error,
+    { id: string; heading?: string; body?: string; section_order?: number }
+  >({
+    mutationFn: ({ id, ...data }) => jsonPatch(`/api/lore/sections/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["lore"] }),
+  });
+}
+
+export function useDeleteLoreSection() {
+  const qc = useQueryClient();
+  return useMutation<{ deleted: boolean }, Error, string>({
+    mutationFn: (id) => apiFetch(`/api/lore/sections/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["lore"] }),
   });
 }

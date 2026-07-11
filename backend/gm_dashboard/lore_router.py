@@ -943,6 +943,22 @@ def create_section(entity_id: UUID, payload: SectionCreate) -> dict:
         conn.close()
 
 
+@router.delete("/lore/sections/{section_id}")
+def delete_section(section_id: UUID) -> dict:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "DELETE FROM lore_sections WHERE id = %s RETURNING id",
+                (str(section_id),),
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Section not found")
+            return {"deleted": True}
+    finally:
+        conn.close()
+
+
 @router.get("/relationships")
 def list_relationships(
     source_type: str | None = None,
