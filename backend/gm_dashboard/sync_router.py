@@ -567,6 +567,32 @@ def _apply_risk_import(cur, review: dict) -> dict:
     return {"applied": True, "risk_id": risk_id}
 
 
+def _apply_clock_import(cur, review: dict) -> dict:
+    payload = review["proposed_changes"] or {}
+    if not payload.get("name"):
+        raise HTTPException(status_code=409, detail="clock_import review has no name")
+
+    cur.execute(
+        """
+        INSERT INTO clocks (name, description, kind, segments, filled)
+        VALUES (%(name)s, %(description)s, %(kind)s, %(segments)s, %(filled)s)
+        RETURNING id
+        """,
+        payload,
+    )
+    clock_id = str(cur.fetchone()["id"])
+
+    cur.execute(
+        """
+        UPDATE sync_reviews
+        SET review_status = 'accepted', applied_at = now(), updated_at = now()
+        WHERE id = %s
+        """,
+        (review["id"],),
+    )
+    return {"applied": True, "clock_id": clock_id}
+
+
 def _apply_npc_import(cur, review: dict) -> dict:
     payload = review["proposed_changes"] or {}
     stats = payload.get("stats")
@@ -1034,6 +1060,12 @@ def apply_sync_review(review_id: UUID, payload: SyncReviewApplyRequest) -> dict:
 
             if review["review_type"] == "risk_import" and review["target_type"] == "risk":
                 result = _apply_risk_import(cur, review)
+                result = _finish_apply_job(cur, job_id, result)
+                conn.commit()
+                return result
+
+            if review["review_type"] == "clock_import" and review["target_type"] == "clock":
+                result = _apply_clock_import(cur, review)
                 result = _finish_apply_job(cur, job_id, result)
                 conn.commit()
                 return result
