@@ -151,6 +151,24 @@ def test_create_section_404_when_entity_missing():
     assert res.status_code == 404
 
 
+def test_delete_section():
+    source = client.post("/api/lore/sources", json={"source_path": "Lore/del.md"}).json()
+    entity = client.post("/api/lore/entities", json={"title": "Del Entity"}).json()
+    section = client.post(
+        f"/api/lore/entities/{entity['id']}/sections",
+        json={"source_id": source["id"], "heading": "H", "body": "B"},
+    ).json()
+
+    res = client.delete(f"/api/lore/sections/{section['id']}")
+    assert res.status_code == 200
+    assert res.json() == {"deleted": True}
+    assert client.get(f"/api/lore/sections/{section['id']}").status_code == 404
+
+
+def test_delete_section_404_for_unknown_id():
+    assert client.delete(f"/api/lore/sections/{NIL_UUID}").status_code == 404
+
+
 # ---- relationships --------------------------------------------------------
 
 

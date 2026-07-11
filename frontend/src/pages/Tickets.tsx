@@ -229,6 +229,14 @@ function TicketDrawer({
             />
           </Field>
 
+          <Field label="NEXT ACTION" hint="the single next concrete step">
+            <input
+              className="input"
+              value={local.next_action}
+              onChange={(e) => update({ next_action: e.target.value })}
+            />
+          </Field>
+
           <Field label="RESUME NOTES" hint="where to pick this back up">
             <textarea
               className="textarea"
@@ -237,6 +245,17 @@ function TicketDrawer({
               onChange={(e) => update({ resume_note: e.target.value })}
             />
           </Field>
+
+          {(local.status === "done" || local.status === "dropped" || local.resolution) && (
+            <Field label="RESOLUTION" hint="how this ticket ended">
+              <textarea
+                className="textarea"
+                style={{ minHeight: 56 }}
+                value={local.resolution}
+                onChange={(e) => update({ resolution: e.target.value })}
+              />
+            </Field>
+          )}
 
           <div className="drawer-section">
             <span className="drawer-section-label">HIERARCHY</span>
@@ -332,6 +351,24 @@ function TicketDrawer({
                   ＋
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div className="drawer-section">
+            <span className="drawer-section-label">PROVENANCE</span>
+            <div className="pin-chip-row">
+              {local.source && <span className="chip">source: {local.source}</span>}
+              {local.lane && <span className="chip">lane: {local.lane}</span>}
+              {local.classification && <span className="chip">class: {local.classification}</span>}
+              {local.target_epic && <span className="chip">epic: {local.target_epic}</span>}
+              {!local.source && !local.lane && !local.classification && !local.target_epic && (
+                <span className="drawer-empty">No import provenance — created in the dashboard.</span>
+              )}
+            </div>
+            <div className="deck-card-meta" style={{ gap: 16 }}>
+              {local.introduced && <span>introduced {local.introduced}</span>}
+              {local.closed && <span>closed {local.closed}</span>}
+              {local.review_after && <span>review after {local.review_after}</span>}
             </div>
           </div>
         </div>

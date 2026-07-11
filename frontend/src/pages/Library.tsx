@@ -9,6 +9,9 @@ import {
   useCreateLoreEntity,
   usePatchLoreEntity,
   useAddLoreAlias,
+  useAddLoreSection,
+  usePatchLoreSection,
+  useDeleteLoreSection,
   useCreateRelationship,
   type LoreEntity,
   type LoreRelationship,
@@ -274,6 +277,9 @@ export function Library({ onNavigate }: { onNavigate: (page: PageKey) => void })
   const createEntity = useCreateLoreEntity();
   const patchEntity = usePatchLoreEntity();
   const addAlias = useAddLoreAlias();
+  const addSection = useAddLoreSection();
+  const patchSection = usePatchLoreSection();
+  const deleteSection = useDeleteLoreSection();
   const createRel = useCreateRelationship();
   const scan = useScanVault();
   const syncNpcs = useSyncNPCsFromVault();
@@ -282,6 +288,7 @@ export function Library({ onNavigate }: { onNavigate: (page: PageKey) => void })
   const [modal, setModal] = useState<
     | { kind: "entity"; id: string | null; data: Record<string, string> }
     | { kind: "alias"; data: Record<string, string> }
+    | { kind: "section"; id: string | null; data: Record<string, string> }
     | { kind: "relationship"; data: Record<string, string> }
     | null
   >(null);
@@ -380,6 +387,29 @@ export function Library({ onNavigate }: { onNavigate: (page: PageKey) => void })
     } else if (modal.kind === "alias" && detail) {
       if (!modal.data.alias?.trim()) return;
       addAlias.mutate({ entityId: detail.id, alias: modal.data.alias.trim() }, done);
+    } else if (modal.kind === "section" && detail) {
+      if (modal.id == null) {
+        const sourceId = modal.data.source_id || detail.source_id || sources[0]?.id;
+        if (!sourceId) {
+          showToast("Ingest a lore source first — sections must belong to a source");
+          return;
+        }
+        addSection.mutate(
+          {
+            entityId: detail.id,
+            source_id: sourceId,
+            heading: modal.data.heading || "",
+            body: modal.data.body || "",
+            section_order: detail.sections.length,
+          },
+          done,
+        );
+      } else {
+        patchSection.mutate(
+          { id: modal.id, heading: modal.data.heading, body: modal.data.body },
+          done,
+        );
+      }
     } else if (modal.kind === "relationship" && detail) {
       if (!modal.data.target?.trim()) return;
       const target = modal.data.target.trim();
@@ -549,19 +579,55 @@ export function Library({ onNavigate }: { onNavigate: (page: PageKey) => void })
                 </div>
               </div>
 
-              {detail.sections.length > 0 && (
-                <div className="field" style={{ gap: 10 }}>
+              <div className="field" style={{ gap: 10 }}>
+                <div className="board-toolbar">
                   <span className="field-label">SECTIONS</span>
-                  {detail.sections.map((sec) => (
-                    <div className="panel" style={{ gap: 6 }} key={sec.id}>
-                      <span className="child-card-title" style={{ fontSize: 13.5 }}>
-                        {sec.heading}
-                      </span>
-                      <span className="panel-note">{sec.content ?? sec.text ?? sec.body ?? ""}</span>
-                    </div>
-                  ))}
+                  <button
+                    className="board-new-scene"
+                    style={{ marginLeft: 0 }}
+                    onClick={() => setModal({ kind: "section", id: null, data: { heading: "", body: "" } })}
+                  >
+                    ＋ section
+                  </button>
                 </div>
-              )}
+                {detail.sections.length === 0 && (
+                  <span className="drawer-empty">No sections yet.</span>
+                )}
+                {detail.sections.map((sec) => (
+                  <div className="panel" style={{ gap: 6 }} key={sec.id}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span className="child-card-title" style={{ fontSize: 13.5 }}>
+                        {sec.heading || "(untitled section)"}
+                      </span>
+                      <button
+                        className="child-edit"
+                        onClick={() =>
+                          setModal({
+                            kind: "section",
+                            id: sec.id,
+                            data: { heading: sec.heading, body: sec.body },
+                          })
+                        }
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="child-delete"
+                        disabled={deleteSection.isPending}
+                        onClick={() =>
+                          deleteSection.mutate(sec.id, {
+                            onSuccess: () => showToast("Section deleted"),
+                            onError: (err) => showToast(`Delete failed: ${err.message}`),
+                          })
+                        }
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    <span className="panel-note" style={{ whiteSpace: "pre-wrap" }}>{sec.body}</span>
+                  </div>
+                ))}
+              </div>
 
               <div className="field" style={{ gap: 10 }}>
                 <div className="board-toolbar">
@@ -710,7 +776,11 @@ export function Library({ onNavigate }: { onNavigate: (page: PageKey) => void })
                 : "New entity"
               : modal.kind === "alias"
                 ? "New alias"
-                : "Link entity"
+                : modal.kind === "section"
+                  ? modal.id != null
+                    ? "Edit section"
+                    : "New section"
+                  : "Link entity"
           }
           onClose={() => setModal(null)}
           footer={
@@ -760,6 +830,40 @@ export function Library({ onNavigate }: { onNavigate: (page: PageKey) => void })
                 onChange={(e) => setModal({ ...modal, data: { ...modal.data, alias: e.target.value } })}
               />
             </Field>
+          )}
+          {modal.kind === "section" && (
+            <>
+              <Field label="HEADING">
+                <input
+                  className="input"
+                  autoFocus
+                  value={modal.data.heading}
+                  onChange={(e) => setModal({ ...modal, data: { ...modal.data, heading: e.target.value } })}
+                />
+              </Field>
+              <Field label="BODY">
+                <textarea
+                  className="textarea textarea--tall"
+                  value={modal.data.body}
+                  onChange={(e) => setModal({ ...modal, data: { ...modal.data, body: e.target.value } })}
+                />
+              </Field>
+              {modal.id == null && (
+                <Field label="SOURCE" hint="which vault source this section belongs to">
+                  <select
+                    className="input"
+                    value={modal.data.source_id ?? detail?.source_id ?? sources[0]?.id ?? ""}
+                    onChange={(e) => setModal({ ...modal, data: { ...modal.data, source_id: e.target.value } })}
+                  >
+                    {sources.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.title || s.source_path}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+            </>
           )}
           {modal.kind === "relationship" && (
             <>

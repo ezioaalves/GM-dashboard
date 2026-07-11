@@ -15,4 +15,8 @@ export interface Ticket {
   closed: string | null;
   resolution: string;
   review_after: string | null;
+  source: string;
+  lane: string;
+  classification: string;
+  target_epic: string;
 }
