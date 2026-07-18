@@ -25,6 +25,8 @@ services:
       KAIHOU_VAULT_ROOT: ${KAIHOU_VAULT_ROOT}
     volumes:
       - ${KAIHOU_VAULT_ROOT}:${KAIHOU_VAULT_ROOT}:rw
+      - /opt/mechanics-vault:/opt/mechanics-vault:ro
+      - /opt/agent-vault:/opt/agent-vault:ro
     ports:
       - "127.0.0.1:8001:8000"
     depends_on:
