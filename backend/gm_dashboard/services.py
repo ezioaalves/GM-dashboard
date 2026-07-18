@@ -334,6 +334,11 @@ def source_collections(vault: Path | None = None) -> list[dict[str, Any]]:
     if not registry.exists():
         return [{"id": "campaign-vault", "root": root, "commit": "", "default": True, "archive": False, "available": True}]
     payload = yaml.safe_load(registry.read_text()) or {}
+    overrides = {}
+    for entry in os.environ.get("KAIHOU_SOURCE_ROOTS", "").split(";"):
+        source_id, separator, source_path = entry.partition("=")
+        if separator and source_id and source_path:
+            overrides[source_id] = Path(source_path).resolve()
     collections: list[dict[str, Any]] = []
     for source in payload.get("sources", []):
         if not isinstance(source, dict) or source.get("type") not in {"git-vault", "campaign-subtree"}:
@@ -341,7 +346,7 @@ def source_collections(vault: Path | None = None) -> list[dict[str, Any]]:
         source_id = str(source.get("id", "")).strip()
         if not source_id:
             continue
-        source_root = (registry.parent / str(source.get("relative_path", ""))).resolve()
+        source_root = overrides.get(source_id, (registry.parent / str(source.get("relative_path", ""))).resolve())
         collections.append({
             "id": source_id,
             "root": source_root,
