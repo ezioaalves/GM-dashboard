@@ -3,6 +3,7 @@ import type { FoundryStatus } from "../types/cockpit";
 export type PageKey =
   | "cockpit"
   | "adventures"
+  | "ideas"
   | "sessions"
   | "scene-deck"
   | "generator"
@@ -59,6 +60,7 @@ export function Sidebar({
       label: "PLAN",
       items: [
         { key: "adventures", label: "Adventures" },
+        { key: "ideas", label: "Idea Inbox" },
         { key: "sessions", label: "Sessions" },
         { key: "scene-deck", label: "Scene Deck" },
         { key: "generator", label: "Generator", overlay: true },

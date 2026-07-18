@@ -5,10 +5,9 @@ from __future__ import annotations
 import os
 import psycopg2
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://kaihou_gm:kaihou_gm_dev@127.0.0.1:54329/kaihou_gm"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is required; configure the production PostgreSQL service.")
 
 DDL = """
 CREATE TABLE IF NOT EXISTS sessions (

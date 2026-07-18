@@ -2,7 +2,7 @@ import type { PageKey } from "../components/Sidebar";
 import { SeverityBadge, TagPill } from "../components/Badge";
 import { ClockRing } from "../components/ClockRing";
 import { useAttentionItems } from "../hooks/useAttentionItems";
-import { useCockpitThreadDirectionQuery } from "../api/cockpit";
+import { useCockpitSessionQuery, useCockpitThreadDirectionQuery } from "../api/cockpit";
 import { useSessionsQuery } from "../api/sessions";
 import { useClocksQuery } from "../api/clocks";
 import type { Session } from "../types/session";
@@ -26,6 +26,7 @@ function pickNextSession(sessions: Session[] | undefined): Session | null {
 
 export function Cockpit({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
   const items = useAttentionItems();
+  const { data: cockpit } = useCockpitSessionQuery();
   const { data: threadDirection } = useCockpitThreadDirectionQuery();
   const { data: sessions } = useSessionsQuery();
   const { data: activeClocks = [] } = useClocksQuery({ lifecycle: "active" });
@@ -62,7 +63,7 @@ export function Cockpit({ onNavigate }: { onNavigate: (page: PageKey) => void })
             <kbd>⌘K</kbd>
             Search vault…
           </div>
-          <button className="btn btn-primary" onClick={() => onNavigate("scene-deck")}>
+          <button className="btn btn-primary" onClick={() => onNavigate("ideas")}>
             ＋ Quick Capture
           </button>
         </div>
@@ -70,6 +71,12 @@ export function Cockpit({ onNavigate }: { onNavigate: (page: PageKey) => void })
 
       <div className="cockpit-grid">
         <section className="column">
+          {cockpit?.current_hierarchy && <div className="panel panel-highlight">
+            <div className="panel-label">CURRENT CAMPAIGN POSITION</div>
+            <div className="next-session-title">{cockpit.current_hierarchy.arc} → {cockpit.current_hierarchy.adventure}</div>
+            <span className="attention-card-detail">Next: {cockpit.current_hierarchy.next_session}</span>
+            {(cockpit.history_gaps?.length ?? 0) > 0 && <span className="attention-card-detail">History gap: session 18 needs GM reconstruction</span>}
+          </div>}
           <div className="column-heading">
             <h2>NEEDS YOUR ATTENTION</h2>
             <span className="count">

@@ -5,6 +5,7 @@ import { Cockpit } from "./pages/Cockpit";
 import { SessionPlanner } from "./pages/SessionPlanner";
 import { SceneDeck } from "./pages/SceneDeck";
 import { Adventures } from "./pages/Adventures";
+import { Ideas } from "./pages/Ideas";
 import { ClockBoard } from "./pages/ClockBoard";
 import { SyncCenter } from "./pages/SyncCenter";
 import { Tickets } from "./pages/Tickets";
@@ -24,6 +25,7 @@ import type { Session } from "./types/session";
 // "generator" is intercepted in navigate() and never becomes the page state.
 const PAGE_TITLES: Record<Exclude<PageKey, "cockpit" | "generator">, string> = {
   adventures: "Adventures",
+  ideas: "Idea Inbox",
   sessions: "Sessions",
   "scene-deck": "Scene Deck",
   threads: "Threads",
@@ -96,6 +98,8 @@ export function App() {
         <SceneDeck onNavigate={navigate} />
       ) : page === "adventures" ? (
         <Adventures />
+      ) : page === "ideas" ? (
+        <Ideas />
       ) : page === "clocks" ? (
         <ClockBoard />
       ) : page === "sync-center" ? (

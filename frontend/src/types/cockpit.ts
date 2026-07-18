@@ -50,6 +50,13 @@ export interface CockpitLatestSession {
 
 export interface CockpitSession {
   latest_session: CockpitLatestSession;
+  current_hierarchy?: {
+    arc: string;
+    adventure: string;
+    next_session: string;
+    next_session_status: string;
+  };
+  history_gaps?: { from_session: number; to_session: number; status: string }[];
   leave_off: CockpitLeaveOff;
   columns: {
     now: CockpitLeaveOff[];

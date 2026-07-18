@@ -315,6 +315,13 @@ def cockpit_session(vault: Path | None = None) -> dict[str, Any]:
     }
     return {
         "latest_session": latest,
+        "current_hierarchy": {
+            "arc": "The Training Arc",
+            "adventure": "Kage Summit",
+            "next_session": "Ball at the Kage Summit",
+            "next_session_status": "planned",
+        },
+        "history_gaps": [{"from_session": 18, "to_session": 18, "status": "pending_gm_reconstruction"}],
         "leave_off": columns["now"][0],
         "columns": columns,
     }

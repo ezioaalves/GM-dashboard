@@ -20,6 +20,7 @@ from .pcs_router import router as pcs_router
 from .pc_lanes_router import router as pc_lanes_router
 from .risk_register_router import router as risk_register_router
 from .feedback_router import router as feedback_router
+from .campaign_router import router as campaign_router
 from .system_enums import enum_catalog
 
 
@@ -38,6 +39,7 @@ app.include_router(pcs_router, prefix="/api")
 app.include_router(pc_lanes_router, prefix="/api")
 app.include_router(risk_register_router, prefix="/api")
 app.include_router(feedback_router, prefix="/api")
+app.include_router(campaign_router, prefix="/api")
 
 
 class SessionNoteRequest(BaseModel):

@@ -219,6 +219,8 @@ class LoreAlias(Base):
     alias_kind = Column(Text, nullable=False, server_default="name")
     locale = Column(Text, nullable=False, server_default="")
     review_status = Column(Text, nullable=False, server_default="accepted")
+    visibility = Column(Text, nullable=False, server_default="gm")
+    temporal_context = Column(Text, nullable=False, server_default="")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     __table_args__ = (UniqueConstraint("entity_id", "alias", "alias_kind"),)
@@ -691,3 +693,85 @@ class FeedbackActionItem(Base):
     follow_up = Column(Text, nullable=False, server_default="")
     status = Column(Text, nullable=False, server_default="open")
     sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+
+class CampaignArc(Base):
+    __tablename__ = "campaign_arcs"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug = Column(Text, nullable=False, unique=True)
+    title = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, server_default="planned")
+    current = Column(Boolean, nullable=False, server_default=text("false"))
+    summary = Column(Text, nullable=False, server_default="")
+    current_adventure_id = Column(Integer, ForeignKey("adventures.id", ondelete="SET NULL"))
+    current_session_id = Column(Integer, ForeignKey("sessions.id", ondelete="SET NULL"))
+    visibility = Column(Text, nullable=False, server_default="gm")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class CreativeIdea(Base):
+    __tablename__ = "creative_ideas"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    title = Column(Text, nullable=False)
+    body = Column(Text, nullable=False, server_default="")
+    state = Column(Text, nullable=False, server_default="captured")
+    source = Column(Text, nullable=False, server_default="quick_capture")
+    arc_id = Column(PGUUID(as_uuid=True), ForeignKey("campaign_arcs.id", ondelete="SET NULL"))
+    target = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    visibility = Column(Text, nullable=False, server_default="gm")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class CampaignTruth(Base):
+    __tablename__ = "campaign_truths"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    key = Column(Text, nullable=False, unique=True)
+    statement = Column(Text, nullable=False)
+    state = Column(Text, nullable=False, server_default="provisional")
+    context_policy = Column(Text, nullable=False, server_default="scoped")
+    visibility = Column(Text, nullable=False, server_default="gm")
+    temporal_context = Column(Text, nullable=False, server_default="current")
+    source = Column(Text, nullable=False, server_default="manual")
+    supersedes_id = Column(PGUUID(as_uuid=True), ForeignKey("campaign_truths.id", ondelete="SET NULL"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class CreativeProposal(Base):
+    __tablename__ = "creative_proposals"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    title = Column(Text, nullable=False)
+    task = Column(Text, nullable=False, server_default="")
+    target_type = Column(Text, nullable=False)
+    target_id = Column(Text, nullable=False, server_default="")
+    state = Column(Text, nullable=False, server_default="draft")
+    proposed_changes = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    context_snapshot = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    context_checksum = Column(Text, nullable=False, server_default="")
+    target_surface = Column(Text, nullable=False, server_default="postgres")
+    decision = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    applied_audit_id = Column(PGUUID(as_uuid=True))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class CampaignArcLink(Base):
+    __tablename__ = "campaign_arc_links"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    arc_id = Column(PGUUID(as_uuid=True), ForeignKey("campaign_arcs.id", ondelete="CASCADE"), nullable=False)
+    source_type = Column(Text, nullable=False)
+    source_id = Column(Text, nullable=False)
+    relation = Column(Text, nullable=False, server_default="contains")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ProposalAudit(Base):
+    __tablename__ = "creative_proposal_audits"
+    id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    proposal_id = Column(PGUUID(as_uuid=True), ForeignKey("creative_proposals.id", ondelete="CASCADE"), nullable=False)
+    action = Column(Text, nullable=False)
+    actor = Column(Text, nullable=False, server_default="gm")
+    result = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
