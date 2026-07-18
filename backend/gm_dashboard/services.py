@@ -333,8 +333,13 @@ def search_vault(q: str, vault: Path | None = None, *, limit: int = 20) -> list[
     if not needle:
         return []
     matches = []
-    for base in ["Campaign Management", "Lore", "Mechanics"]:
-        for path in (root / base).rglob("*.md"):
+    canonical_roots = ["10-canon", "20-campaign", "30-sessions", "50-table"]
+    bases = canonical_roots if any((root / base).exists() for base in canonical_roots) else ["Campaign Management", "Lore", "Mechanics"]
+    for base in bases:
+        base_path = root / base
+        if not base_path.exists():
+            continue
+        for path in base_path.rglob("*.md"):
             if ".git" in path.parts or "_drafts" in path.parts:
                 continue
             text = path.read_text(errors="ignore")
