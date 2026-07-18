@@ -360,7 +360,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
             </button>
           </div>
           <span className="field-hint">
-            Source-aware, unranked substring search. Campaign canon is included by default;
+            Source-aware, unranked substring search. Campaign, mechanics, and agent sources are included by default;
             archive remains excluded unless explicitly enabled.
           </span>
           <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: 8 }}>
