@@ -1215,7 +1215,7 @@ def bulk_apply_sync_reviews() -> dict:
             cur.execute(
                 """
                 SELECT id FROM sync_reviews
-                WHERE review_status IN ('pending', 'accepted', 'merged')
+                WHERE review_status = 'pending'
                   AND applied_at IS NULL
                 ORDER BY created_at
                 """

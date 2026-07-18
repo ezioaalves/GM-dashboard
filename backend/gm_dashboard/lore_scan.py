@@ -257,6 +257,12 @@ def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
             continue
 
         parsed = parse_source_file(rel_path, text)
+        # In the restructured vault, only explicit kaihou-record documents
+        # own entities.  Adventure/session/scene annexes may mention the
+        # same names, but are contextual overlays and must not create a
+        # competing Dashboard entity by filename/slug.
+        if not parsed["kaihou_id"]:
+            continue
 
         if parsed["kaihou_id"]:
             cur.execute(
@@ -309,7 +315,6 @@ def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
             """
             SELECT id FROM sync_reviews
             WHERE review_type = 'vault_import'
-              AND review_status = 'pending'
               AND proposed_changes -> 'source_paths' = %(paths)s::jsonb
             """,
             {"paths": psycopg2.extras.Json([rel_path])},
