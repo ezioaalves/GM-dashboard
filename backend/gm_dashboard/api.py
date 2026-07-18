@@ -129,8 +129,14 @@ def capture_scene(payload: SceneRequest) -> dict[str, Any]:
 
 
 @app.get("/api/search")
-def search(q: str, limit: int = 20) -> list[dict[str, str]]:
-    return handle(services.search_vault, q, limit=limit)
+def search(q: str, limit: int = 20, sources: str = "", include_archive: bool = False) -> list[dict[str, str]]:
+    selected = [source.strip() for source in sources.split(",") if source.strip()]
+    return handle(services.search_vault, q, limit=limit, sources=selected or None, include_archive=include_archive)
+
+
+@app.get("/api/search/sources")
+def search_sources() -> list[dict[str, Any]]:
+    return handle(services.search_collections)
 
 
 

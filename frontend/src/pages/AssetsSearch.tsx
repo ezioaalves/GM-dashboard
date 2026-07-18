@@ -42,6 +42,10 @@ interface SearchHit {
   path: string;
   title: string;
   snippet: string;
+  source_id?: string;
+  source_commit?: string;
+  heading?: string;
+  audience?: string;
 }
 
 function MirrorBadge({ state }: { state: string }) {
@@ -172,6 +176,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
   const [lastQuery, setLastQuery] = useState("");
   const [results, setResults] = useState<SearchHit[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [includeArchive, setIncludeArchive] = useState(false);
   const [fileModal, setFileModal] = useState<{ path: string; body: string; dirty: boolean } | null>(
     null,
   );
@@ -215,7 +220,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
     setSearching(true);
     setLastQuery(q);
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=20`);
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=20&include_archive=${includeArchive}`);
       if (!res.ok) throw new Error(await res.text());
       setResults((await res.json()) as SearchHit[]);
     } catch (err) {
@@ -345,7 +350,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
             <input
               className="input"
               style={{ flex: 1, padding: "12px 16px", fontSize: 14 }}
-              placeholder="Search vault markdown (Campaign Management · Lore · Mechanics)…"
+              placeholder="Search canonical campaign Markdown…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && runSearch()}
@@ -355,9 +360,13 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
             </button>
           </div>
           <span className="field-hint">
-            ⚠ honest limits: unranked substring match · first hit per file · first N files
-            alphabetically — not relevance-ranked search
+            Source-aware, unranked substring search. Campaign canon is included by default;
+            archive remains excluded unless explicitly enabled.
           </span>
+          <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={includeArchive} onChange={(e) => setIncludeArchive(e.target.checked)} />
+            Include historical archive (read-only)
+          </label>
 
           {results && results.length > 0 && (
             <div className="child-list" style={{ gap: 8 }}>
@@ -365,13 +374,13 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
                 {results.length} FILES MATCHED "{lastQuery}"
               </span>
               {results.map((r) => (
-                <button className="search-hit" key={r.path} onClick={() => openFile(r.path)}>
+                <button className="search-hit" key={`${r.source_id ?? "campaign-vault"}:${r.path}`} onClick={() => r.source_id === "campaign-vault" && openFile(r.path)}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span className="next-move-slug" style={{ fontSize: 11.5 }}>
-                      {r.path}
+                      {r.source_id ?? "campaign-vault"} · {r.path}{r.heading ? ` · ${r.heading}` : ""}
                     </span>
                     <span className="board-hint" style={{ marginLeft: "auto" }}>
-                      open file →
+                      {r.source_id === "campaign-vault" ? "open file →" : "provenance only"}
                     </span>
                   </div>
                   {highlight(r.snippet, lastQuery)}
