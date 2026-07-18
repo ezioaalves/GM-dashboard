@@ -13,6 +13,8 @@ from gm_dashboard.lore_scan import (
     extract_wikilinks,
     is_scannable,
     parse_sections,
+    parse_frontmatter,
+    parse_source_file,
     parse_title,
     slugify,
 )
@@ -63,6 +65,24 @@ def test_slugify_lowercases_and_dashes():
 def test_parse_title_uses_first_h1_or_falls_back_to_filename():
     assert parse_title("# The Shadowlands\n\nBody.", Path("x.md")) == "The Shadowlands"
     assert parse_title("No heading here.", Path("Foo_Bar.md")) == "Foo_Bar"
+
+
+def test_canonical_frontmatter_controls_dashboard_identity_and_kind():
+    text = (
+        "---\n"
+        "schema: kaihou-record/v1\n"
+        "kaihou_id: 4ac2e340-3bf5-4d8c-8244-2bc84e47f9e3\n"
+        "kind: npc\n"
+        "title: Garou Do\n"
+        "slug: garou-do\n"
+        "---\n\n"
+        "# Garou Do\n"
+    )
+    assert parse_frontmatter(text)["kaihou_id"] == "4ac2e340-3bf5-4d8c-8244-2bc84e47f9e3"
+    parsed = parse_source_file("10-canon/characters/npcs/Garou_Do.md", text)
+    assert parsed["kaihou_id"] == "4ac2e340-3bf5-4d8c-8244-2bc84e47f9e3"
+    assert parsed["entity_type"] == "npc"
+    assert parsed["slug"] == "garou-do"
 
 
 def test_classify_entity_type_by_folder_prefix():
