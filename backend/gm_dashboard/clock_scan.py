@@ -46,8 +46,13 @@ def parse_clocks_file(text: str) -> list[dict]:
     return clocks
 
 
-def scan_clocks(vault_root: Path, cur, dry_run: bool = False) -> dict:
-    clocks_path = (
+def find_clocks_file(vault_root: Path) -> Path:
+    # Post-migration layout first; the legacy Campaign Management path stays as
+    # a fallback for un-migrated vault checkouts.
+    candidates = sorted((vault_root / "20-campaign" / "arcs").glob("*/_Play Aids/Clocks and Beats.md"))
+    if candidates:
+        return candidates[0]
+    return (
         vault_root
         / "Campaign Management"
         / "01 - Live"
@@ -56,6 +61,10 @@ def scan_clocks(vault_root: Path, cur, dry_run: bool = False) -> dict:
         / "_Play Aids"
         / "Clocks and Beats.md"
     )
+
+
+def scan_clocks(vault_root: Path, cur, dry_run: bool = False) -> dict:
+    clocks_path = find_clocks_file(vault_root)
     scanned = 0
     new = 0
     duplicate_pending = 0

@@ -207,14 +207,12 @@ export function useCreateRelationship() {
 // ── Assets ───────────────────────────────────────────────────────────────────
 
 export function useAssetsQuery(params?: { asset_type?: string; mirror_state?: string; q?: string }) {
-  const qs = params
-    ? new URLSearchParams(
-        Object.entries(params).filter(([, v]) => !!v) as [string, string][],
-      ).toString()
-    : "";
+  const qs = new URLSearchParams(
+    Object.entries({ limit: "1000", ...params }).filter(([, v]) => !!v) as [string, string][],
+  ).toString();
   return useQuery<LoreAsset[]>({
     queryKey: ["assets", params ?? null],
-    queryFn: () => apiFetch(`/api/assets${qs ? `?${qs}` : ""}`),
+    queryFn: () => apiFetch(`/api/assets?${qs}`),
   });
 }
 

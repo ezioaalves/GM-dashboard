@@ -79,7 +79,7 @@ def test_parse_clocks_file_extracts_named_clocks_and_skips_meta_sections():
 def test_scan_clocks_dry_run_reports_summary_without_writing(tmp_path):
     _write(
         tmp_path,
-        "Campaign Management/01 - Live/Current Arc/The Training Arc/_Play Aids/Clocks and Beats.md",
+        "20-campaign/arcs/The_Training_Arc/_Play Aids/Clocks and Beats.md",
         CLOCKS_MD,
     )
     conn = _connect()
@@ -104,7 +104,7 @@ client = TestClient(app)
 def test_scan_clocks_creates_pending_reviews_and_skips_on_rescan(tmp_path, monkeypatch):
     _write(
         tmp_path,
-        "Campaign Management/01 - Live/Current Arc/The Training Arc/_Play Aids/Clocks and Beats.md",
+        "20-campaign/arcs/The_Training_Arc/_Play Aids/Clocks and Beats.md",
         CLOCKS_MD,
     )
     monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
@@ -123,6 +123,8 @@ def test_scan_clocks_creates_pending_reviews_and_skips_on_rescan(tmp_path, monke
 
 
 def test_scan_and_apply_clock_import(tmp_path, monkeypatch):
+    # Uses the legacy pre-migration path on purpose: proves the fallback in
+    # find_clocks_file still works for un-migrated vault checkouts.
     _write(
         tmp_path,
         "Campaign Management/01 - Live/Current Arc/The Training Arc/_Play Aids/Clocks and Beats.md",

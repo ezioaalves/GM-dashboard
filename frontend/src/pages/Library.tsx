@@ -17,6 +17,7 @@ import {
   type LoreRelationship,
 } from "../api/lore";
 import { useScanVault } from "../api/sync";
+import { AssetThumb } from "../components/AssetThumb";
 import { useNPCsQuery, usePCsQuery } from "../api/npcs";
 import {
   usePushNPCToFoundry,
@@ -540,26 +541,36 @@ export function Library({ onNavigate }: { onNavigate: (page: PageKey) => void })
           {selection?.kind === "entity" && detail && (
             <div className="library-detail">
               <div className="panel" style={{ gap: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <span className="type-chip type-chip--cut">{detail.entity_type.toUpperCase()}</span>
-                  <h2 className="drawer-title" style={{ fontSize: 19 }}>
-                    {detail.title}
-                  </h2>
-                  <FreshnessBadge state={detail.freshness_state} />
-                  <button
-                    className="child-edit"
-                    onClick={() =>
-                      setModal({
-                        kind: "entity",
-                        id: detail.id,
-                        data: { title: detail.title, summary: detail.summary, entity_type: detail.entity_type },
-                      })
-                    }
-                  >
-                    Edit
-                  </button>
+                <div style={{ display: "flex", gap: 16 }}>
+                  {(() => {
+                    const portrait =
+                      detail.assets.find((a) => a.asset_type === "image" && a.status === "current") ??
+                      detail.assets.find((a) => a.asset_type === "image");
+                    return portrait ? <AssetThumb asset={portrait} className="entity-portrait" /> : null;
+                  })()}
+                  <div style={{ flex: 1, display: "grid", gap: 10, alignContent: "start" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span className="type-chip type-chip--cut">{detail.entity_type.toUpperCase()}</span>
+                      <h2 className="drawer-title" style={{ fontSize: 19 }}>
+                        {detail.title}
+                      </h2>
+                      <FreshnessBadge state={detail.freshness_state} />
+                      <button
+                        className="child-edit"
+                        onClick={() =>
+                          setModal({
+                            kind: "entity",
+                            id: detail.id,
+                            data: { title: detail.title, summary: detail.summary, entity_type: detail.entity_type },
+                          })
+                        }
+                      >
+                        Edit
+                      </button>
+                    </div>
+                    <p className="drawer-summary">{detail.summary || "No summary yet."}</p>
+                  </div>
                 </div>
-                <p className="drawer-summary">{detail.summary || "No summary yet."}</p>
                 <div className="pin-chip-row" style={{ borderTop: "1px solid var(--border)", paddingTop: 12, alignItems: "center" }}>
                   <span className="field-label" style={{ alignSelf: "center" }}>
                     ALIASES
@@ -724,7 +735,7 @@ export function Library({ onNavigate }: { onNavigate: (page: PageKey) => void })
                   <div className="pin-chip-row" style={{ gap: 12 }}>
                     {detail.assets.map((asset) => (
                       <div className="child-card child-card--row" style={{ padding: "10px 14px" }} key={asset.id}>
-                        <div className="pinned-thumb" style={{ width: 30, height: 30 }} />
+                        <AssetThumb asset={asset} className="entity-asset-thumb" />
                         <div className="pinned-meta">
                           <span className="pinned-name" style={{ fontSize: 12.5 }}>
                             {asset.title || asset.source_path}

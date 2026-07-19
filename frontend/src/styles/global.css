@@ -1037,11 +1037,51 @@ button.chip {
 
 /* ── Session Planner ──────────────────────────────────────────────────────── */
 
+.entity-portrait {
+  width: 96px;
+  height: 96px;
+  flex: none;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.entity-asset-thumb {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
 .session-switcher {
   display: flex;
   gap: 8px;
   align-items: center;
   overflow-x: auto;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.session-switcher::-webkit-scrollbar {
+  height: 6px;
+}
+
+.session-switcher::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.session-switcher::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
 }
 
 .switcher-pill {
