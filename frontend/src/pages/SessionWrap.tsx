@@ -12,6 +12,7 @@ import { useClocksQuery } from "../api/clocks";
 import { usePCsQuery } from "../api/npcs";
 import type { Session, WrapCapture } from "../types/session";
 import type { Clock, ClockTick } from "../types/clock";
+import { api } from "../lib/api";
 
 interface TickRow {
   clockName: string;
@@ -27,9 +28,7 @@ function useSessionClockTicks(session: Session, clocks: Clock[]): TickRow[] {
     queries: clocks.map((clock) => ({
       queryKey: ["clock-ticks", clock.id],
       queryFn: async (): Promise<ClockTick[]> => {
-        const res = await fetch(`/api/clocks/${clock.id}/ticks?limit=50`);
-        if (!res.ok) throw new Error(await res.text());
-        return res.json();
+        return api.get<ClockTick[]>(`/api/clocks/${clock.id}/ticks?limit=50`);
       },
     })),
   });

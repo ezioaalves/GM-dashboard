@@ -5,6 +5,7 @@ import { PillSelect } from "../components/PillSelect";
 import type { PageKey } from "../components/Sidebar";
 import { assetFileUrl, useAssetsQuery, usePatchAsset, type LoreAsset } from "../api/lore";
 import { useWriteVaultMarkdown } from "../api/sessions";
+import { api } from "../lib/api";
 
 const UNAVAILABLE_MIRROR_STATES = new Set(["missing_source", "missing_mirror", "failed"]);
 
@@ -201,9 +202,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
 
   async function scanAssets() {
     try {
-      const res = await fetch("/api/assets/import/scan", { method: "POST" });
-      if (!res.ok) throw new Error(await res.text());
-      const summary = (await res.json()) as Record<string, unknown>;
+      const summary = await api.post<Record<string, unknown>>("/api/assets/import/scan");
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["sync"] });
       setScanBanner(
@@ -220,9 +219,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
     setSearching(true);
     setLastQuery(q);
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=20&include_archive=${includeArchive}`);
-      if (!res.ok) throw new Error(await res.text());
-      setResults((await res.json()) as SearchHit[]);
+      setResults(await api.get<SearchHit[]>(`/api/search?q=${encodeURIComponent(q)}&limit=20&include_archive=${includeArchive}`));
     } catch (err) {
       showToast(`Search failed: ${(err as Error).message}`);
       setResults([]);
@@ -233,9 +230,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
 
   async function openFile(path: string) {
     try {
-      const res = await fetch(`/api/files/markdown?path=${encodeURIComponent(path)}`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as { path: string; markdown: string };
+      const data = await api.get<{ path: string; markdown: string }>(`/api/files/markdown?path=${encodeURIComponent(path)}`);
       setFileModal({ path: data.path, body: data.markdown, dirty: false });
     } catch (err) {
       showToast(`Open failed: ${(err as Error).message}`);
