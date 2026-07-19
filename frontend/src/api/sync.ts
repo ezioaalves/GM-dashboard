@@ -17,15 +17,27 @@ export function useSyncFreshnessQuery() {
   });
 }
 
-export function useSyncReviewsQuery(params?: { review_status?: string; review_type?: string }) {
+export function useSyncReviewsQuery(
+  params?: {
+    review_status?: string;
+    review_type?: string;
+    outstanding?: boolean;
+    q?: string;
+    limit?: number;
+  },
+  options?: { enabled?: boolean },
+) {
   const qs = params
     ? new URLSearchParams(
-        Object.entries(params).filter(([, v]) => v != null) as [string, string][],
+        Object.entries(params)
+          .filter(([, v]) => v != null && v !== "" && v !== false)
+          .map(([k, v]) => [k, String(v)]),
       ).toString()
     : "";
   return useQuery<SyncReview[]>({
     queryKey: ["sync", "reviews", params ?? null],
     queryFn: () => apiFetch(`/api/sync/reviews${qs ? `?${qs}` : ""}`),
+    enabled: options?.enabled ?? true,
   });
 }
 
