@@ -45,6 +45,8 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd ${{ vars.VPS_DEPLOY_PATH }}
             git pull --ff-only
+            git diff --quiet HEAD || { echo "deploy checkout has local changes; refusing to build stale code"; exit 1; }
             docker compose -f docker-compose.prod.yml up -d --build
