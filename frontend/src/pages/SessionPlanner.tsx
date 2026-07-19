@@ -376,7 +376,7 @@ export function SessionPlanner() {
   const patchScene = usePatchScene();
   const deleteScene = useDeleteScene();
 
-  const sorted = useMemo(() => [...sessions].sort((a, b) => a.number - b.number), [sessions]);
+  const sorted = useMemo(() => [...sessions].sort((a, b) => b.number - a.number), [sessions]);
 
   const [activeId, setActiveId] = useState<number | null>(null);
   const [tab, setTab] = useState<"board" | "fit" | "wrap">("board");
@@ -400,7 +400,7 @@ export function SessionPlanner() {
     sorted.find((s) => s.id === activeId) ??
     sorted.find((s) => s.status === "ready") ??
     sorted.find((s) => s.status === "planned") ??
-    sorted[sorted.length - 1] ??
+    sorted[0] ??
     null;
 
   const isAllLens = lens === "all";

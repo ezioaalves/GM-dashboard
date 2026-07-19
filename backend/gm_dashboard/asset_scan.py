@@ -28,8 +28,62 @@ def read_image_dimensions(path: Path) -> tuple[int | None, int | None]:
         return None, None
 
 
+def find_assets_dir(vault_root: Path) -> Path:
+    # Post-migration layout first; the legacy Lore/Assets path stays as a
+    # fallback for un-migrated vault checkouts.
+    migrated = vault_root / "40-assets"
+    if migrated.exists():
+        return migrated
+    return vault_root / "Lore" / "Assets"
+
+
+def link_embedded_assets(cur, dry_run: bool = False) -> int:
+    """Resolve entity markdown embeds (``![[portrait.png]]``) to asset rows.
+
+    Embed relationships record the vault path as written in the markdown,
+    which may predate asset moves — so match by filename. Only unambiguous
+    matches link, and existing links are never overwritten.
+    """
+    cur.execute("SELECT id, source_path FROM lore_assets")
+    by_basename: dict[str, list] = {}
+    for row in cur.fetchall():
+        by_basename.setdefault(Path(row["source_path"]).name, []).append(row["id"])
+
+    cur.execute("SELECT id FROM lore_entities")
+    entity_ids = {str(row["id"]) for row in cur.fetchall()}
+
+    cur.execute(
+        """
+        SELECT source_id, unresolved_target FROM lore_relationships
+        WHERE provenance = 'asset_embed' AND source_type = 'entity'
+          AND unresolved_target != ''
+        """
+    )
+    linked = 0
+    for rel in cur.fetchall():
+        entity_id = rel["source_id"].removeprefix("entity:")
+        if entity_id not in entity_ids:
+            continue
+        matches = by_basename.get(Path(rel["unresolved_target"]).name, [])
+        if len(matches) != 1:
+            continue
+        if dry_run:
+            linked += 1
+            continue
+        cur.execute(
+            """
+            UPDATE lore_assets
+            SET linked_entity_id = %s
+            WHERE id = %s AND linked_entity_id IS NULL
+            """,
+            (entity_id, matches[0]),
+        )
+        linked += cur.rowcount
+    return linked
+
+
 def scan_assets(vault_root: Path, cur, dry_run: bool = False) -> dict:
-    assets_dir = vault_root / "Lore" / "Assets"
+    assets_dir = find_assets_dir(vault_root)
     scanned = 0
     new = 0
     changed_on_disk = 0
@@ -41,9 +95,12 @@ def scan_assets(vault_root: Path, cur, dry_run: bool = False) -> dict:
     seen_paths: set[str] = set()
 
     if not assets_dir.exists():
+        # Still resolve embed links: asset rows and embed relationships can
+        # exist independently of the folder being present on this checkout.
         return {
             "scanned": 0, "new": 0, "changed_on_disk": 0, "missing": 0,
             "conflicts": 0, "unchanged": 0, "errors": 0, "review_ids": [],
+            "linked": link_embedded_assets(cur, dry_run=dry_run),
         }
 
     for path in sorted(assets_dir.rglob("*")):
@@ -172,6 +229,8 @@ def scan_assets(vault_root: Path, cur, dry_run: bool = False) -> dict:
                 (row["id"],),
             )
 
+    linked = link_embedded_assets(cur, dry_run=dry_run)
+
     return {
         "scanned": scanned,
         "new": new,
@@ -181,4 +240,5 @@ def scan_assets(vault_root: Path, cur, dry_run: bool = False) -> dict:
         "unchanged": unchanged,
         "errors": errors,
         "review_ids": review_ids,
+        "linked": linked,
     }

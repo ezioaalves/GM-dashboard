@@ -3,38 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Field } from "../components/Modal";
 import { PillSelect } from "../components/PillSelect";
 import type { PageKey } from "../components/Sidebar";
-import { assetFileUrl, useAssetsQuery, usePatchAsset, type LoreAsset } from "../api/lore";
+import { useAssetsQuery, usePatchAsset, type LoreAsset } from "../api/lore";
 import { useWriteVaultMarkdown } from "../api/sessions";
 import { api } from "../lib/api";
-
-const UNAVAILABLE_MIRROR_STATES = new Set(["missing_source", "missing_mirror", "failed"]);
-
-function AssetThumb({ asset, className }: { asset: LoreAsset; className: string }) {
-  const [errored, setErrored] = useState(false);
-  const canShowImage = !UNAVAILABLE_MIRROR_STATES.has(asset.mirror_state) && !errored;
-
-  if (canShowImage) {
-    return (
-      <div className={className}>
-        <img
-          src={assetFileUrl(asset.id)}
-          alt={asset.title || asset.source_path}
-          loading="lazy"
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          onError={() => setErrored(true)}
-        />
-      </div>
-    );
-  }
-  return (
-    <div className={className}>
-      <span className="mono-inline" style={{ fontSize: 10, color: "var(--text-faint)" }}>
-        {asset.asset_type}
-        {asset.width && asset.height ? ` · ${asset.width}×${asset.height}` : ""}
-      </span>
-    </div>
-  );
-}
+import { AssetThumb } from "../components/AssetThumb";
 
 const MIRROR_FILTERS = ["all", "mirrored", "not_mirrored", "stale_mirror", "failed"] as const;
 const STATUS_FILTERS = ["all", "current", "variant", "rejected"] as const;
@@ -168,6 +140,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
   const [tab, setTab] = useState<"assets" | "search">("assets");
   const [mirrorFilter, setMirrorFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [assetQuery, setAssetQuery] = useState("");
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [scanBanner, setScanBanner] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -192,10 +165,14 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
     toastTimer.current = setTimeout(() => setToast(null), 3600);
   }
 
+  const assetNeedle = assetQuery.trim().toLowerCase();
   const filtered = assets.filter(
     (a) =>
       (mirrorFilter === "all" || a.mirror_state === mirrorFilter) &&
-      (statusFilter === "all" || a.status === statusFilter),
+      (statusFilter === "all" || a.status === statusFilter) &&
+      (!assetNeedle ||
+        (a.title || "").toLowerCase().includes(assetNeedle) ||
+        a.source_path.toLowerCase().includes(assetNeedle)),
   );
 
   const drawerAsset = assets.find((a) => a.id === drawerId) ?? null;
@@ -311,6 +288,13 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
                 {m}
               </button>
             ))}
+            <input
+              className="input"
+              style={{ marginLeft: "auto", width: 260, flex: "none" }}
+              placeholder="Filter by name or path…"
+              value={assetQuery}
+              onChange={(e) => setAssetQuery(e.target.value)}
+            />
           </div>
 
           <div className="asset-grid">

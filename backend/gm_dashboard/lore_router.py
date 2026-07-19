@@ -1343,7 +1343,7 @@ def list_assets(
                 pattern = f"%{q}%"
                 params.extend([pattern, pattern])
             where = "WHERE " + " AND ".join(conditions) if conditions else ""
-            params.append(max(1, min(limit, 500)))
+            params.append(max(1, min(limit, 2000)))
             cur.execute(
                 f"""
                 SELECT *

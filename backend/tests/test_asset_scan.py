@@ -226,7 +226,7 @@ def test_scan_assets_returns_zeroed_summary_when_assets_dir_missing(tmp_path):
 
     assert summary == {
         "scanned": 0, "new": 0, "changed_on_disk": 0, "missing": 0,
-        "conflicts": 0, "unchanged": 0, "errors": 0, "review_ids": [],
+        "conflicts": 0, "unchanged": 0, "errors": 0, "review_ids": [], "linked": 0,
     }
 
 
@@ -358,3 +358,106 @@ def test_scan_assets_dry_run_does_not_mutate_freshness_state(tmp_path):
 
     assert summary["missing"] == 1
     assert freshness == "fresh"  # dry run must not mutate
+
+
+def test_scan_assets_prefers_migrated_40_assets_root(tmp_path):
+    _write_png(tmp_path, "40-assets/Images/NPCs/scar.png")
+    # A stray legacy file must be ignored once the migrated root exists.
+    _write_png(tmp_path, "Lore/Assets/Images/NPCs/legacy.png")
+
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            summary = scan_assets(tmp_path, cur)
+            cur.execute("SELECT proposed_changes FROM sync_reviews")
+            proposed = cur.fetchone()["proposed_changes"]
+    finally:
+        conn.close()
+
+    assert summary["scanned"] == 1
+    assert proposed["source_path"] == "40-assets/Images/NPCs/scar.png"
+
+
+def _seed_entity_with_embed(cur, slug: str, embed_target: str) -> str:
+    cur.execute(
+        """
+        INSERT INTO lore_entities (slug, title, entity_type)
+        VALUES (%s, %s, 'npc') RETURNING id
+        """,
+        (slug, slug.title()),
+    )
+    entity_id = str(cur.fetchone()["id"])
+    cur.execute(
+        """
+        INSERT INTO lore_relationships (
+          source_type, source_id, target_type, relationship_type,
+          provenance, unresolved_target
+        )
+        VALUES ('entity', %s, 'asset', 'embeds', 'asset_embed', %s)
+        """,
+        (f"entity:{entity_id}", embed_target),
+    )
+    return entity_id
+
+
+def _seed_asset(cur, source_path: str, linked_entity_id: str | None = None) -> str:
+    cur.execute(
+        """
+        INSERT INTO lore_assets (source_path, source_hash, asset_type, linked_entity_id)
+        VALUES (%s, %s, 'image', %s) RETURNING id
+        """,
+        (source_path, f"hash-{source_path}", linked_entity_id),
+    )
+    return str(cur.fetchone()["id"])
+
+
+def test_scan_links_embedded_assets_by_filename(tmp_path):
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("DELETE FROM lore_relationships")
+            cur.execute("DELETE FROM lore_entities")
+            # Embed recorded with the pre-migration path; the asset row now
+            # lives under 40-assets. Filename match must still resolve it.
+            entity_id = _seed_entity_with_embed(cur, "garou-do", "Lore/Assets/NPCs/Garou_Do.png")
+            asset_id = _seed_asset(cur, "40-assets/NPCs/Garou_Do.png")
+
+            summary = scan_assets(tmp_path, cur)
+            cur.execute("SELECT linked_entity_id FROM lore_assets WHERE id = %s", (asset_id,))
+            linked_to = str(cur.fetchone()["linked_entity_id"])
+    finally:
+        conn.close()
+
+    assert summary["linked"] == 1
+    assert linked_to == entity_id
+
+
+def test_scan_link_pass_skips_ambiguous_and_preserves_existing_links(tmp_path):
+    conn = _connect()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("DELETE FROM lore_relationships")
+            cur.execute("DELETE FROM lore_entities")
+            ambiguous_entity = _seed_entity_with_embed(cur, "ambiguous", "portrait.png")
+            _seed_asset(cur, "40-assets/NPCs/A/portrait.png")
+            _seed_asset(cur, "40-assets/NPCs/B/portrait.png")
+
+            keeper = _seed_entity_with_embed(cur, "keeper", "kept.png")
+            other_entity = _seed_entity_with_embed(cur, "other", "unrelated.png")
+            kept_asset = _seed_asset(cur, "40-assets/NPCs/kept.png", linked_entity_id=other_entity)
+
+            summary = scan_assets(tmp_path, cur)
+            cur.execute("SELECT linked_entity_id FROM lore_assets WHERE id = %s", (kept_asset,))
+            kept_link = str(cur.fetchone()["linked_entity_id"])
+            cur.execute(
+                "SELECT count(*) AS n FROM lore_assets WHERE linked_entity_id = %s",
+                (ambiguous_entity,),
+            )
+            ambiguous_links = cur.fetchone()["n"]
+    finally:
+        conn.close()
+
+    assert summary["linked"] == 0
+    assert kept_link == other_entity  # existing link untouched
+    assert ambiguous_links == 0
+    assert keeper  # embed with no matching asset simply stays unlinked

@@ -22,8 +22,8 @@ export function Field({ label, hint, htmlFor, error, children }: { label: string
   return <div className="ui-field"><label className="field-label" htmlFor={htmlFor}>{label}</label>{children}{error ? <span className="ui-field-error" role="alert">{error}</span> : hint && <span className="field-hint">{hint}</span>}</div>;
 }
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className = "", ...props }, ref) { return <input ref={ref} className={`text-input ui-input ${className}`} {...props} />; });
-export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function TextArea({ className = "", ...props }, ref) { return <textarea ref={ref} className={`text-input ui-textarea ${className}`} {...props} />; });
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className = "", ...props }, ref) { return <input ref={ref} className={`ui-input ${className}`} {...props} />; });
+export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function TextArea({ className = "", ...props }, ref) { return <textarea ref={ref} className={`ui-textarea ${className}`} {...props} />; });
 
 export function StatusBadge({ state }: { state: string }) { return <span className={`ui-status ui-status--${state}`}>{state}</span>; }
 
