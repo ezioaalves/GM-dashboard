@@ -821,7 +821,7 @@ def test_sync_freshness_breaks_down_stale_counts_by_category():
             cur.execute(
                 """
                 INSERT INTO lore_assets (source_path, title, freshness_state, mirror_state)
-                VALUES ('Lore/Assets/stale-asset-test.png', 'Stale Asset Test', 'stale_source_changed', 'fresh')
+                VALUES ('Lore/Assets/stale-asset-test.png', 'Stale Asset Test', 'stale_source_changed', 'mirrored')
                 """
             )
             cur.execute(
