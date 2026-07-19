@@ -10,7 +10,7 @@ import {
 } from "../api/sync";
 import type { SyncReview } from "../types/sync";
 
-type Filter = "all" | "conflict" | "pending" | "stale" | "decided";
+type Filter = "attention" | "conflict" | "pending" | "stale" | "decided" | "history";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   conflict: { label: "CONFLICT", cls: "conflict" },
@@ -257,10 +257,17 @@ function ReviewCard({
 }
 
 export function SyncCenter() {
-  const { data: reviews = [] } = useSyncReviewsQuery();
+  const [filter, setFilter] = useState<Filter>("attention");
+  const [historyQuery, setHistoryQuery] = useState("");
+  // The inbox only ever loads outstanding work; applied/decided history is a
+  // separate on-demand search so the front page stays small.
+  const { data: reviews = [] } = useSyncReviewsQuery({ outstanding: true, limit: 500 });
+  const { data: history = [] } = useSyncReviewsQuery(
+    { q: historyQuery.trim() || undefined, limit: 200 },
+    { enabled: filter === "history" },
+  );
   const scan = useScanVault();
   const bulkApply = useBulkApplySyncReviews();
-  const [filter, setFilter] = useState<Filter>("all");
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -270,29 +277,34 @@ export function SyncCenter() {
     toastTimer.current = setTimeout(() => setToast(null), 4200);
   }
 
-  const counts = {
-    all: reviews.length,
+  const counts: Record<Filter, number | null> = {
+    attention: reviews.length,
     conflict: reviews.filter((r) => r.review_status === "conflict").length,
     pending: reviews.filter((r) => r.review_status === "pending").length,
     stale: reviews.filter((r) => r.review_status === "stale").length,
     decided: reviews.filter(
       (r) => ["accepted", "merged"].includes(r.review_status) && !r.applied_at,
     ).length,
+    history: null,
   };
 
-  const visible = reviews.filter((r) => {
-    if (filter === "all") return true;
-    if (filter === "decided")
-      return ["accepted", "merged"].includes(r.review_status) && !r.applied_at;
-    return r.review_status === filter;
-  });
+  const visible =
+    filter === "history"
+      ? history
+      : reviews.filter((r) => {
+          if (filter === "attention") return true;
+          if (filter === "decided")
+            return ["accepted", "merged"].includes(r.review_status) && !r.applied_at;
+          return r.review_status === filter;
+        });
 
   const filters: Array<{ key: Filter; label: string; dot?: string }> = [
-    { key: "all", label: "All" },
+    { key: "attention", label: "Needs attention" },
     { key: "conflict", label: "Conflict", dot: "var(--red-bright)" },
     { key: "pending", label: "Pending", dot: "var(--amber-bright)" },
     { key: "stale", label: "Stale", dot: "var(--azure)" },
     { key: "decided", label: "Accepted, not yet applied", dot: "var(--text-faint)" },
+    { key: "history", label: "History" },
   ];
 
   return (
@@ -307,7 +319,7 @@ export function SyncCenter() {
         <div className="header-actions">
           <button
             className="btn-ghost"
-            disabled={bulkApply.isPending || counts.pending + counts.decided === 0}
+            disabled={bulkApply.isPending || (counts.pending ?? 0) + (counts.decided ?? 0) === 0}
             onClick={() => {
               if (!window.confirm("Accept and apply all outstanding reviews?")) return;
               bulkApply.mutate(undefined, {
@@ -346,14 +358,28 @@ export function SyncCenter() {
             onClick={() => setFilter(f.key)}
           >
             {f.dot && <span className="filter-dot" style={{ background: f.dot }} />}
-            {f.label} <span style={{ opacity: 0.6 }}>{counts[f.key]}</span>
+            {f.label}
+            {counts[f.key] !== null && <span style={{ opacity: 0.6 }}> {counts[f.key]}</span>}
           </button>
         ))}
+        {filter === "history" && (
+          <input
+            className="input"
+            style={{ marginLeft: "auto", width: 280, flex: "none" }}
+            placeholder="Search past reviews…"
+            value={historyQuery}
+            onChange={(e) => setHistoryQuery(e.target.value)}
+          />
+        )}
       </div>
 
       <div className="review-list">
         {visible.length === 0 && (
-          <div className="empty-state">Nothing here — inbox is clear for this filter.</div>
+          <div className="empty-state">
+            {filter === "history"
+              ? "No past reviews match this search."
+              : "Nothing here — inbox is clear for this filter."}
+          </div>
         )}
         {visible.map((review) => (
           <ReviewCard key={review.id} review={review} onError={showToast} />

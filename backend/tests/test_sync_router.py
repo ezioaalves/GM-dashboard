@@ -1045,3 +1045,25 @@ def test_bulk_apply_permanent_failure_leaves_no_orphaned_running_job():
     assert all(row["status"] != "running" for row in rows), (
         f"orphaned running sync_jobs row(s) left behind: {rows}"
     )
+
+
+def test_list_sync_reviews_outstanding_filter_and_search():
+    _seed_review(review_type="ticket_import", target_type="ticket", target_id="needs-work", review_status="pending")
+    _seed_review(review_type="asset_import", target_type="asset", target_id="waiting", review_status="accepted")
+    applied = _seed_review(
+        review_type="clock_import", target_type="clock", target_id="Winter Court", review_status="accepted",
+    )
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE sync_reviews SET applied_at = now() WHERE id = %s", (applied["id"],))
+    finally:
+        conn.close()
+
+    outstanding = client.get("/api/sync/reviews?outstanding=true")
+    assert outstanding.status_code == 200
+    assert {r["target_id"] for r in outstanding.json()} == {"needs-work", "waiting"}
+
+    searched = client.get("/api/sync/reviews?q=winter")
+    assert searched.status_code == 200
+    assert [r["target_id"] for r in searched.json()] == ["Winter Court"]

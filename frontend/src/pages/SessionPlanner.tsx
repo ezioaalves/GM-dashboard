@@ -596,6 +596,12 @@ export function SessionPlanner() {
     <>
       {/* session switcher */}
       <div className="session-switcher">
+        <button
+          className="switcher-new"
+          onClick={() => setSessionModal({ title: "", status: "planned", promise: "" })}
+        >
+          ＋ New session
+        </button>
         {sorted.map((s) => (
           <button
             key={s.id}
@@ -608,12 +614,6 @@ export function SessionPlanner() {
             {s.number} — {s.name || "TBD"}
           </button>
         ))}
-        <button
-          className="switcher-new"
-          onClick={() => setSessionModal({ title: "", status: "planned", promise: "" })}
-        >
-          ＋ New session
-        </button>
       </div>
 
       {active && (

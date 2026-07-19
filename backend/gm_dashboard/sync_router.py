@@ -887,6 +887,8 @@ def list_sync_reviews(
     review_status: str | None = None,
     review_type: str | None = None,
     target_type: str | None = None,
+    outstanding: bool = False,
+    q: str | None = None,
     limit: int = 100,
 ) -> list[dict]:
     conn = get_connection()
@@ -903,6 +905,18 @@ def list_sync_reviews(
             if target_type:
                 conditions.append("target_type = %s")
                 params.append(target_type)
+            if outstanding:
+                conditions.append(
+                    "(review_status IN ('pending', 'conflict', 'stale')"
+                    " OR (review_status IN ('accepted', 'merged') AND applied_at IS NULL))"
+                )
+            if q:
+                conditions.append(
+                    "(target_id ILIKE %s OR review_type ILIKE %s OR target_type ILIKE %s"
+                    " OR proposed_changes::text ILIKE %s)"
+                )
+                pattern = f"%{q}%"
+                params.extend([pattern, pattern, pattern, pattern])
             where = "WHERE " + " AND ".join(conditions) if conditions else ""
             params.append(max(1, min(limit, 500)))
             cur.execute(
