@@ -1,29 +1,33 @@
-import { useState } from "react";
-import { useCreateIdea, useIdeasQuery } from "../api/ideas";
+import { useMemo, useState } from "react";
+import { Check, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { type CreativeIdea, type IdeaState, useCreateIdea, useIdeasQuery, usePatchIdea } from "../api/ideas";
+import { Button, EmptyState, ErrorState, Field, IconButton, Input, LoadingState, Modal, PageHeader, StatusBadge, Surface, Tabs, TextArea } from "../ui";
+import "../features/ideas/ideas.css";
+
+type IdeaFilter = "active" | IdeaState | "all";
+const filters: { value: IdeaFilter; label: string }[] = [{ value: "active", label: "Active" }, { value: "captured", label: "Captured" }, { value: "triaged", label: "Triaged" }, { value: "promoted", label: "Promoted" }, { value: "discarded", label: "Discarded" }, { value: "all", label: "All" }];
+const actionMap: Record<IdeaState, { label: string; state: IdeaState; icon: "triage" | "promote" | "discard" | "restore" }[]> = { captured: [{ label: "Triage", state: "triaged", icon: "triage" }, { label: "Discard", state: "discarded", icon: "discard" }], triaged: [{ label: "Move to captured", state: "captured", icon: "restore" }, { label: "Promote", state: "promoted", icon: "promote" }, { label: "Discard", state: "discarded", icon: "discard" }], promoted: [{ label: "Return to triage", state: "triaged", icon: "triage" }], discarded: [{ label: "Restore", state: "captured", icon: "restore" }] };
+
+function sourceLabel(source: string) { return source.replace(/[_-]/g, " ").replace(/\b\w/g, (character) => character.toUpperCase()); }
+function createdLabel(value: string | null) { return value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Creation time unavailable"; }
+
+function IdeaCard({ idea, onEdit }: { idea: CreativeIdea; onEdit: (idea: CreativeIdea) => void }) {
+  const patch = usePatchIdea();
+  const actions = actionMap[idea.state];
+  const icon = (kind: string) => kind === "discard" ? <Trash2 size={14} /> : kind === "promote" ? <Check size={14} /> : <RotateCcw size={14} />;
+  return <Surface className="idea-card"><div><h2 className="idea-card-title">{idea.title}</h2>{idea.body && <p className="idea-card-body">{idea.body}</p>}<div className="idea-card-meta"><span>{sourceLabel(idea.source)}</span><span>{createdLabel(idea.created_at)}</span></div></div><div className="idea-card-side"><StatusBadge state={idea.state} /><div className="idea-card-actions"><IconButton aria-label={`Edit ${idea.title}`} onClick={() => onEdit(idea)}><Pencil size={15} /></IconButton>{actions.map((action) => <Button key={action.label} type="button" variant={action.icon === "discard" ? "danger" : action.icon === "promote" ? "primary" : "secondary"} pending={patch.isPending} onClick={() => patch.mutate({ id: idea.id, patch: { state: action.state } })}>{icon(action.icon)} {action.label}</Button>)}</div></div>{patch.isError && <div className="idea-card-error" role="alert"><span>{patch.error.message}</span><Button type="button" onClick={() => patch.reset()}>Dismiss</Button><Button type="button" onClick={() => patch.mutate(patch.variables!)}>Retry</Button></div>}</Surface>;
+}
+
+function EditIdeaModal({ idea, onClose }: { idea: CreativeIdea; onClose: () => void }) {
+  const [title, setTitle] = useState(idea.title); const [body, setBody] = useState(idea.body); const patch = usePatchIdea(); const titleId = `idea-title-${idea.id}`;
+  const save = () => patch.mutate({ id: idea.id, patch: { title, body } }, { onSuccess: onClose });
+  return <Modal title="Edit idea" onClose={onClose} width={520} footer={<><Button type="button" onClick={onClose}>Cancel</Button><Button type="button" variant="primary" pending={patch.isPending} onClick={save}>Save changes</Button></>}><div className="idea-edit"><Field label="Title" htmlFor={titleId} error={!title.trim() ? "Title is required." : undefined}><Input id={titleId} value={title} onChange={(event) => setTitle(event.target.value)} /></Field><Field label="Detail" htmlFor={`${titleId}-body`}><TextArea id={`${titleId}-body`} rows={8} value={body} onChange={(event) => setBody(event.target.value)} /></Field>{patch.isError && <ErrorState error={patch.error} onRetry={save} />}</div></Modal>;
+}
 
 export function Ideas() {
-  const { data: ideas = [], isLoading } = useIdeasQuery();
-  const create = useCreateIdea();
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (!title.trim()) return;
-    create.mutate({ title: title.trim(), body }, { onSuccess: () => { setTitle(""); setBody(""); } });
-  }
-  return <>
-    <header className="page-header"><div><h1 className="page-title">Idea Inbox</h1><span className="page-subtitle">Capture now; triage and promote later</span></div></header>
-    <section className="panel" style={{ maxWidth: 720 }}>
-      <form onSubmit={submit}>
-        <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Idea title" autoFocus />
-        <textarea className="text-input" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Optional detail" rows={3} />
-        <button className="btn btn-primary" type="submit" disabled={create.isPending}>Capture idea</button>
-      </form>
-    </section>
-    <section className="column" style={{ maxWidth: 720 }}>
-      {isLoading && <div className="empty-state">Loading ideas…</div>}
-      {!isLoading && ideas.length === 0 && <div className="empty-state">No ideas captured yet.</div>}
-      {ideas.map((idea) => <article className="attention-card" key={idea.id}><div className="attention-card-body"><span className="attention-card-title">{idea.title}</span>{idea.body && <span className="attention-card-detail">{idea.body}</span>}</div><span className="tag-pill">{idea.state}</span></article>)}
-    </section>
-  </>;
+  const { data: ideas = [], isLoading, isError, error, refetch } = useIdeasQuery(); const create = useCreateIdea(); const [filter, setFilter] = useState<IdeaFilter>("active"); const [title, setTitle] = useState(""); const [body, setBody] = useState(""); const [titleError, setTitleError] = useState(""); const [editing, setEditing] = useState<CreativeIdea | null>(null);
+  const counts = useMemo(() => ({ all: ideas.length, active: ideas.filter((idea) => idea.state === "captured" || idea.state === "triaged").length, captured: ideas.filter((idea) => idea.state === "captured").length, triaged: ideas.filter((idea) => idea.state === "triaged").length, promoted: ideas.filter((idea) => idea.state === "promoted").length, discarded: ideas.filter((idea) => idea.state === "discarded").length }), [ideas]);
+  const visible = ideas.filter((idea) => filter === "all" || (filter === "active" ? idea.state === "captured" || idea.state === "triaged" : idea.state === filter));
+  const submit = (event: React.FormEvent) => { event.preventDefault(); if (!title.trim()) { setTitleError("Title is required."); return; } create.mutate({ title: title.trim(), body }, { onSuccess: () => { setTitle(""); setBody(""); setTitleError(""); } }); };
+  return <div className="idea-workspace"><PageHeader title="Idea Inbox" subtitle="Capture now; triage and promote when it is useful." /><Surface><form className="idea-capture" onSubmit={submit}><Field label="Idea title" htmlFor="idea-title" error={titleError}><Input id="idea-title" autoFocus value={title} onChange={(event) => { setTitle(event.target.value); if (titleError) setTitleError(""); }} placeholder="A scene, complication, or thread to revisit" aria-invalid={Boolean(titleError)} /></Field><Field label="Detail" htmlFor="idea-body" hint="Optional. Formatting is preserved."><TextArea id="idea-body" rows={4} value={body} onChange={(event) => setBody(event.target.value)} placeholder="Capture the useful part before it slips away." /></Field><div className="idea-capture-actions">{create.isError ? <span className="ui-field-error" role="alert">{create.error.message}</span> : <span className="field-hint">Ideas stay in the Dashboard until a later reviewed workflow uses them.</span>}<Button type="submit" variant="primary" pending={create.isPending}>Capture idea</Button></div>{create.isError && <Button type="button" onClick={() => create.mutate(create.variables!)}>Retry capture</Button>}</form></Surface><Tabs value={filter} onChange={setFilter} tabs={filters.map((item) => ({ ...item, count: counts[item.value] }))} /><section className="idea-list" aria-live="polite">{isLoading && <LoadingState label="Loading ideas…" />}{isError && <ErrorState error={error} onRetry={() => refetch()} />}{!isLoading && !isError && visible.length === 0 && <EmptyState>No ideas match this filter.</EmptyState>}{visible.map((idea) => <IdeaCard key={idea.id} idea={idea} onEdit={setEditing} />)}</section>{editing && <EditIdeaModal idea={editing} onClose={() => setEditing(null)} />}</div>;
 }
