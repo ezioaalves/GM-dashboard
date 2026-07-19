@@ -23,8 +23,11 @@ services:
     environment:
       DATABASE_URL: postgresql://kaihou_gm:${POSTGRES_PASSWORD}@postgres:5432/kaihou_gm
       KAIHOU_VAULT_ROOT: ${KAIHOU_VAULT_ROOT}
+      KAIHOU_SOURCE_ROOTS: mechanics-vault=/sources/mechanics-vault;agent-vault=/sources/agent-vault
     volumes:
       - ${KAIHOU_VAULT_ROOT}:${KAIHOU_VAULT_ROOT}:rw
+      - /home/ezio/kaihou-sources/mechanics-vault:/sources/mechanics-vault:ro
+      - /home/ezio/kaihou-sources/agent-vault:/sources/agent-vault:ro
     ports:
       - "127.0.0.1:8001:8000"
     depends_on:

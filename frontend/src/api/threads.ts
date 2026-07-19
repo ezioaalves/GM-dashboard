@@ -1,14 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest as apiFetch } from "../lib/api";
 import type { Thread, ThreadCreate, ThreadDetail, ThreadSummary, ThreadUpdate } from "../types/thread";
-
-async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
 
 export function useThreadsQuery(params?: {
   status?: string;

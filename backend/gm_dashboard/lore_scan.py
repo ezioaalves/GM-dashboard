@@ -10,6 +10,7 @@ TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 WIKILINK_RE = re.compile(r"(!?)\[\[([^\[\]]+?)\]\]")
 SLUG_STRIP_RE = re.compile(r"[^a-z0-9]+")
+FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 
 ASSET_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
 
@@ -36,6 +37,20 @@ def parse_title(text: str, path: Path) -> str:
     if match:
         return match.group(1)
     return path.stem
+
+
+def parse_frontmatter(text: str) -> dict[str, str]:
+    """Read the deliberately flat kaihou-record frontmatter contract."""
+    match = FRONTMATTER_RE.match(text)
+    if not match:
+        return {}
+    values = {}
+    for line in match.group(1).splitlines():
+        if ":" not in line or line.startswith((" ", "\t")):
+            continue
+        key, value = line.split(":", 1)
+        values[key.strip()] = value.strip().strip("'\"")
+    return values
 
 
 def classify_entity_type(rel_path: str) -> str:
@@ -117,11 +132,13 @@ def looks_like_asset(target: str) -> bool:
 
 
 def parse_source_file(rel_path: str, text: str) -> dict:
-    title = parse_title(text, Path(rel_path))
+    frontmatter = parse_frontmatter(text)
+    title = frontmatter.get("title") or parse_title(text, Path(rel_path))
     return {
         "title": title,
-        "slug": slugify(title),
-        "entity_type": classify_entity_type(rel_path),
+        "slug": frontmatter.get("slug") or slugify(title),
+        "entity_type": frontmatter.get("kind") or classify_entity_type(rel_path),
+        "kaihou_id": frontmatter.get("kaihou_id"),
         "sections": parse_sections(text),
         "links": extract_wikilinks(text),
     }
@@ -199,7 +216,13 @@ def _resolve_entity(cur, target: str) -> dict | None:
 
 
 def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
-    lore_dir = vault_root / "Lore"
+    scan_roots = [
+        vault_root / "Lore",
+        vault_root / "10-canon",
+        vault_root / "20-campaign",
+        vault_root / "30-sessions",
+        vault_root / "50-table",
+    ]
     scanned = 0
     new = 0
     changed = 0
@@ -207,10 +230,11 @@ def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
     errors = 0
     review_ids: list[str] = []
 
-    if not lore_dir.exists():
+    scan_paths = [path for root in scan_roots if root.exists() for path in root.rglob("*.md")]
+    if not scan_paths:
         return {"scanned": 0, "new": 0, "changed": 0, "unchanged": 0, "errors": 0, "review_ids": []}
 
-    for path in sorted(lore_dir.rglob("*.md")):
+    for path in sorted(scan_paths):
         if not is_scannable(path, vault_root):
             continue
         rel_path = str(path.relative_to(vault_root))
@@ -233,11 +257,23 @@ def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
             continue
 
         parsed = parse_source_file(rel_path, text)
+        # In the restructured vault, only explicit kaihou-record documents
+        # own entities.  Adventure/session/scene annexes may mention the
+        # same names, but are contextual overlays and must not create a
+        # competing Dashboard entity by filename/slug.
+        if not parsed["kaihou_id"]:
+            continue
 
-        cur.execute(
-            "SELECT id, graph_endpoint_id FROM lore_entities WHERE slug = %s",
-            (parsed["slug"],),
-        )
+        if parsed["kaihou_id"]:
+            cur.execute(
+                "SELECT id, graph_endpoint_id FROM lore_entities WHERE id = %s",
+                (parsed["kaihou_id"],),
+            )
+        else:
+            cur.execute(
+                "SELECT id, graph_endpoint_id FROM lore_entities WHERE slug = %s",
+                (parsed["slug"],),
+            )
         existing_entity = cur.fetchone()
 
         existing_sections: list[dict] = []
@@ -261,6 +297,7 @@ def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
         proposed_changes = {
             "diff_kind": diff_kind,
             "entity": {
+                "id": parsed["kaihou_id"],
                 "slug": parsed["slug"],
                 "title": parsed["title"],
                 "entity_type": parsed["entity_type"],
@@ -278,7 +315,6 @@ def scan_vault(vault_root: Path, cur, dry_run: bool = False) -> dict:
             """
             SELECT id FROM sync_reviews
             WHERE review_type = 'vault_import'
-              AND review_status = 'pending'
               AND proposed_changes -> 'source_paths' = %(paths)s::jsonb
             """,
             {"paths": psycopg2.extras.Json([rel_path])},

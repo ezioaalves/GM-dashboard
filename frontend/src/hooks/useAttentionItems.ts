@@ -1,5 +1,5 @@
 import type { Severity } from "../components/Badge";
-import type { PageKey } from "../components/Sidebar";
+import type { PageKey } from "../navigation";
 import { useSyncFreshnessQuery } from "../api/sync";
 import { useRisksStaleQuery } from "../api/risks";
 import { useFeedbackOverdueQuery } from "../api/feedback";

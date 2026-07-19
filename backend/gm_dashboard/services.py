@@ -327,29 +327,88 @@ def cockpit_session(vault: Path | None = None) -> dict[str, Any]:
     }
 
 
-def search_vault(q: str, vault: Path | None = None, *, limit: int = 20) -> list[dict[str, str]]:
+def source_collections(vault: Path | None = None) -> list[dict[str, Any]]:
+    """Return registered Markdown collections that are safely readable by search."""
+    root = vault or find_vault_root()
+    registry = root / "00-system" / "external-sources.yaml"
+    if not registry.exists():
+        return [{"id": "campaign-vault", "root": root, "commit": "", "default": True, "archive": False, "available": True}]
+    payload = yaml.safe_load(registry.read_text()) or {}
+    overrides = {}
+    for entry in os.environ.get("KAIHOU_SOURCE_ROOTS", "").split(";"):
+        source_id, separator, source_path = entry.partition("=")
+        if separator and source_id and source_path:
+            overrides[source_id] = Path(source_path).resolve()
+    collections: list[dict[str, Any]] = []
+    for source in payload.get("sources", []):
+        if not isinstance(source, dict) or source.get("type") not in {"git-vault", "campaign-subtree"}:
+            continue
+        source_id = str(source.get("id", "")).strip()
+        if not source_id:
+            continue
+        source_root = overrides.get(source_id, (registry.parent / str(source.get("relative_path", ""))).resolve())
+        collections.append({
+            "id": source_id,
+            "root": source_root,
+            "commit": str(source.get("git_commit", "")),
+            "default": source.get("rag_default") == "include",
+            "archive": source.get("rag_default") == "exclude" and source_id.endswith("archive"),
+            "available": source_root.is_dir(),
+        })
+    return collections
+
+
+def search_collections(vault: Path | None = None) -> list[dict[str, Any]]:
+    """Public source catalog for source-aware search controls and provenance."""
+    return [{key: collection[key] for key in ("id", "commit", "default", "archive", "available")} for collection in source_collections(vault)]
+
+
+def _search_bases(root: Path, source_id: str, archive: bool) -> list[Path]:
+    if archive:
+        return [root]
+    if source_id == "campaign-vault":
+        canonical_roots = ["10-canon", "20-campaign", "30-sessions", "50-table"]
+        if any((root / base).exists() for base in canonical_roots):
+            return [root / base for base in canonical_roots]
+        return [root / base for base in ["Campaign Management", "Lore", "Mechanics"]]
+    return [root]
+
+
+def _heading_at(text: str, index: int) -> str:
+    headings = re.findall(r"^#{1,6}\\s+(.+?)\\s*$", text[:index], re.MULTILINE)
+    return headings[-1] if headings else ""
+
+
+def search_vault(q: str, vault: Path | None = None, *, limit: int = 20, sources: list[str] | None = None, include_archive: bool = False) -> list[dict[str, str]]:
     root = vault or find_vault_root()
     needle = q.lower().strip()
     if not needle:
         return []
     matches = []
-    for base in ["Campaign Management", "Lore", "Mechanics"]:
-        for path in (root / base).rglob("*.md"):
-            if ".git" in path.parts or "_drafts" in path.parts:
+    requested = set(sources or [])
+    for collection in source_collections(root):
+        if not collection["available"] or (collection["archive"] and not include_archive):
+            continue
+        if requested and collection["id"] not in requested:
+            continue
+        if not requested and not collection["default"]:
+            continue
+        for base_path in _search_bases(collection["root"], collection["id"], collection["archive"]):
+            if not base_path.exists():
                 continue
-            text = path.read_text(errors="ignore")
-            idx = text.lower().find(needle)
-            if idx == -1:
-                continue
-            start = max(0, idx - 80)
-            end = min(len(text), idx + len(q) + 120)
-            matches.append({
-                "path": relative(root, path),
-                "title": path.stem.replace("_", " "),
-                "snippet": " ".join(text[start:end].split()),
-            })
-            if len(matches) >= limit:
-                return matches
+            for path in base_path.rglob("*.md"):
+                if ".git" in path.parts or ".obsidian" in path.parts or "_drafts" in path.parts:
+                    continue
+                text = path.read_text(errors="ignore")
+                idx = text.lower().find(needle)
+                if idx == -1:
+                    continue
+                start = max(0, idx - 80)
+                end = min(len(text), idx + len(q) + 120)
+                frontmatter, _ = split_frontmatter(text, path)
+                matches.append({"path": relative(collection["root"], path), "title": path.stem.replace("_", " "), "snippet": " ".join(text[start:end].split()), "source_id": collection["id"], "source_commit": collection["commit"], "heading": _heading_at(text, idx), "audience": str(frontmatter.get("audience") or frontmatter.get("visibility") or "gm")})
+                if len(matches) >= limit:
+                    return matches
     return matches
 
 

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiRequest as apiFetch } from "../lib/api";
 import type {
   ActionItemCreate,
   ActionItemPatch,
@@ -8,15 +9,6 @@ import type {
   FeedbackEntryPatch,
   FeedbackOverdueItem,
 } from "../types/feedback";
-
-async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
 
 const jsonPost = <T>(url: string, body: unknown) =>
   apiFetch<T>(url, {

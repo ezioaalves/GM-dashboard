@@ -337,10 +337,12 @@ def _apply_vault_import(cur, review: dict) -> dict:
 
     cur.execute(
         """
-        INSERT INTO lore_entities (slug, title, entity_type, source_path, source_hash, review_status)
-        VALUES (%(slug)s, %(title)s, %(entity_type)s, %(source_path)s, %(source_hash)s, 'accepted')
-        ON CONFLICT (slug) DO UPDATE SET
+        INSERT INTO lore_entities (id, slug, title, entity_type, source_path, source_hash, review_status)
+        VALUES (COALESCE(%(id)s::uuid, gen_random_uuid()), %(slug)s, %(title)s,
+                %(entity_type)s, %(source_path)s, %(source_hash)s, 'accepted')
+        ON CONFLICT (id) DO UPDATE SET
           title = EXCLUDED.title,
+          slug = EXCLUDED.slug,
           entity_type = EXCLUDED.entity_type,
           source_path = EXCLUDED.source_path,
           source_hash = EXCLUDED.source_hash,
@@ -349,6 +351,7 @@ def _apply_vault_import(cur, review: dict) -> dict:
         RETURNING id, graph_endpoint_id
         """,
         {
+            "id": entity_payload.get("id") or None,
             "slug": entity_payload["slug"],
             "title": entity_payload.get("title", entity_payload["slug"]),
             "entity_type": entity_payload.get("entity_type", "article"),
@@ -1212,7 +1215,7 @@ def bulk_apply_sync_reviews() -> dict:
             cur.execute(
                 """
                 SELECT id FROM sync_reviews
-                WHERE review_status IN ('pending', 'accepted', 'merged')
+                WHERE review_status = 'pending'
                   AND applied_at IS NULL
                 ORDER BY created_at
                 """

@@ -5,6 +5,7 @@ import { PillSelect } from "../components/PillSelect";
 import type { PageKey } from "../components/Sidebar";
 import { assetFileUrl, useAssetsQuery, usePatchAsset, type LoreAsset } from "../api/lore";
 import { useWriteVaultMarkdown } from "../api/sessions";
+import { api } from "../lib/api";
 
 const UNAVAILABLE_MIRROR_STATES = new Set(["missing_source", "missing_mirror", "failed"]);
 
@@ -42,6 +43,10 @@ interface SearchHit {
   path: string;
   title: string;
   snippet: string;
+  source_id?: string;
+  source_commit?: string;
+  heading?: string;
+  audience?: string;
 }
 
 function MirrorBadge({ state }: { state: string }) {
@@ -172,6 +177,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
   const [lastQuery, setLastQuery] = useState("");
   const [results, setResults] = useState<SearchHit[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [includeArchive, setIncludeArchive] = useState(false);
   const [fileModal, setFileModal] = useState<{ path: string; body: string; dirty: boolean } | null>(
     null,
   );
@@ -196,9 +202,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
 
   async function scanAssets() {
     try {
-      const res = await fetch("/api/assets/import/scan", { method: "POST" });
-      if (!res.ok) throw new Error(await res.text());
-      const summary = (await res.json()) as Record<string, unknown>;
+      const summary = await api.post<Record<string, unknown>>("/api/assets/import/scan");
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["sync"] });
       setScanBanner(
@@ -215,9 +219,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
     setSearching(true);
     setLastQuery(q);
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=20`);
-      if (!res.ok) throw new Error(await res.text());
-      setResults((await res.json()) as SearchHit[]);
+      setResults(await api.get<SearchHit[]>(`/api/search?q=${encodeURIComponent(q)}&limit=20&include_archive=${includeArchive}`));
     } catch (err) {
       showToast(`Search failed: ${(err as Error).message}`);
       setResults([]);
@@ -228,9 +230,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
 
   async function openFile(path: string) {
     try {
-      const res = await fetch(`/api/files/markdown?path=${encodeURIComponent(path)}`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as { path: string; markdown: string };
+      const data = await api.get<{ path: string; markdown: string }>(`/api/files/markdown?path=${encodeURIComponent(path)}`);
       setFileModal({ path: data.path, body: data.markdown, dirty: false });
     } catch (err) {
       showToast(`Open failed: ${(err as Error).message}`);
@@ -345,7 +345,7 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
             <input
               className="input"
               style={{ flex: 1, padding: "12px 16px", fontSize: 14 }}
-              placeholder="Search vault markdown (Campaign Management · Lore · Mechanics)…"
+              placeholder="Search canonical campaign Markdown…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && runSearch()}
@@ -355,9 +355,13 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
             </button>
           </div>
           <span className="field-hint">
-            ⚠ honest limits: unranked substring match · first hit per file · first N files
-            alphabetically — not relevance-ranked search
+            Source-aware, unranked substring search. Campaign, mechanics, and agent sources are included by default;
+            archive remains excluded unless explicitly enabled.
           </span>
+          <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={includeArchive} onChange={(e) => setIncludeArchive(e.target.checked)} />
+            Include historical archive (read-only)
+          </label>
 
           {results && results.length > 0 && (
             <div className="child-list" style={{ gap: 8 }}>
@@ -365,13 +369,13 @@ export function AssetsSearch({ onNavigate }: { onNavigate: (page: PageKey) => vo
                 {results.length} FILES MATCHED "{lastQuery}"
               </span>
               {results.map((r) => (
-                <button className="search-hit" key={r.path} onClick={() => openFile(r.path)}>
+                <button className="search-hit" key={`${r.source_id ?? "campaign-vault"}:${r.path}`} onClick={() => r.source_id === "campaign-vault" && openFile(r.path)}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span className="next-move-slug" style={{ fontSize: 11.5 }}>
-                      {r.path}
+                      {r.source_id ?? "campaign-vault"} · {r.path}{r.heading ? ` · ${r.heading}` : ""}
                     </span>
                     <span className="board-hint" style={{ marginLeft: "auto" }}>
-                      open file →
+                      {r.source_id === "campaign-vault" ? "open file →" : "provenance only"}
                     </span>
                   </div>
                   {highlight(r.snippet, lastQuery)}

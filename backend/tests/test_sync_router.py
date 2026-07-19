@@ -968,7 +968,7 @@ def test_bulk_apply_reports_genuine_failure_without_blocking_others():
     assert "ticket payload" in failed_row["error"]
 
 
-def test_bulk_apply_rerun_retries_only_previously_failed_reviews():
+def test_bulk_apply_rerun_skips_accepted_reviews_which_retry_individually():
     child_review = _seed_review(
         review_type="ticket_import",
         target_type="ticket",
@@ -997,7 +997,11 @@ def test_bulk_apply_rerun_retries_only_previously_failed_reviews():
     assert second.status_code == 200
     second_body = second.json()
     applied_ids = {row["review_id"] for row in second_body["applied"]}
-    assert child_review["id"] in applied_ids
+    # Bulk-apply only picks up pending reviews; the child was auto-accepted on
+    # the failed first pass, so its retry is an explicit individual apply.
+    assert child_review["id"] not in applied_ids
+    retry = client.post(f"/api/sync/reviews/{child_review['id']}/apply", json={"confirmation": True})
+    assert retry.status_code == 200
     assert client.get("/api/tickets/rerun-child").status_code == 200
 
 

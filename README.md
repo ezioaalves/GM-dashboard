@@ -2,13 +2,12 @@
 
 Private GM cockpit for prep, note capture, and session recovery.
 
-The current source-boundary rules live in
-`docs/superpowers/system-definition/`. Markdown remains the long-form prose and
-source-artifact layer for session logs, prep, lore files, mechanics, and
-operational tickets until reviewed import/cutover. Postgres owns reviewed
-structured dashboard state: tickets after accepted import, lore projections and
-graph records, threads, sessions, scenes, sync reviews, sync jobs, assets, and
-Foundry mirror metadata.
+The multi-vault source-boundary rules live in the sibling
+`../agent-vault/superpowers/` documentation. The campaign vault owns prose,
+prep, sessions, and assets; Postgres owns structured state, bindings, reviews,
+jobs, and freshness; Foundry owns runtime mechanics and permissions. Crossings
+are reviewed. Idea Inbox records are Dashboard-only operational material:
+promoting an idea does not publish or synchronize it.
 
 ## Backend
 
@@ -54,10 +53,8 @@ Useful endpoints:
 - `POST /api/drafts/{id}/save`
 - `GET /api/foundry/status`
 
-gm-dashboard is its own repository, checked out as a gitignored sibling folder
-at the Kaihou vault repo root. Set `KAIHOU_VAULT_ROOT` to the Kaihou vault
-checkout path (it no longer auto-detects from the app's own location, since
-the app and the vault are separate repos).
+Set `KAIHOU_VAULT_ROOT` to the sibling `campaign-vault` checkout. Production
+also mounts registered mechanics and agent source collections read-only.
 
 ## Frontend
 
@@ -73,8 +70,22 @@ set `KAIHOU_DASHBOARD_API` only when intentionally targeting another server.
 
 ```bash
 python -m pytest backend/tests
-npm test
+npm run check
 ```
+
+For a local integration database only, run
+`POSTGRES_PASSWORD=kaihou_gm_dev docker compose --profile test up -d postgres`,
+then migrate it with the matching `DATABASE_URL`. Never point tests at the VPS
+database.
+
+## Feature slices
+
+New frontend work lives behind the typed API facade, the navigation registry,
+shared UI controls, dedicated feature styles, and focused tests. Direct fetches
+and inline feature layout styles are prohibited. Declare the owning surface for
+every mutation; vault and Foundry writes must enter `sync_reviews` first.
+Adopt this foundation next in Sync Center/Clocks, Session/Scene boards,
+Campaign Health/Library, then remaining low-risk pages.
 
 ## Deployment
 

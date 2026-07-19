@@ -20,7 +20,7 @@ from .pcs_router import router as pcs_router
 from .pc_lanes_router import router as pc_lanes_router
 from .risk_register_router import router as risk_register_router
 from .feedback_router import router as feedback_router
-from .campaign_router import router as campaign_router
+from .campaign import router as campaign_router
 from .system_enums import enum_catalog
 
 
@@ -129,8 +129,14 @@ def capture_scene(payload: SceneRequest) -> dict[str, Any]:
 
 
 @app.get("/api/search")
-def search(q: str, limit: int = 20) -> list[dict[str, str]]:
-    return handle(services.search_vault, q, limit=limit)
+def search(q: str, limit: int = 20, sources: str = "", include_archive: bool = False) -> list[dict[str, str]]:
+    selected = [source.strip() for source in sources.split(",") if source.strip()]
+    return handle(services.search_vault, q, limit=limit, sources=selected or None, include_archive=include_archive)
+
+
+@app.get("/api/search/sources")
+def search_sources() -> list[dict[str, Any]]:
+    return handle(services.search_collections)
 
 
 
