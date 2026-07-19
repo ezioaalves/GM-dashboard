@@ -217,6 +217,8 @@ def test_diff_sections_reports_nothing_when_unchanged():
     assert result == {"added": [], "removed": [], "modified": []}
 
 
+from uuid import uuid4
+
 from gm_dashboard.lore_scan import scan_vault
 
 
@@ -227,9 +229,31 @@ def _write(tmp_path, rel_path, text):
     return full
 
 
+def _record(kaihou_id, kind, body):
+    return (
+        "---\n"
+        "schema: kaihou-record/v1\n"
+        f"kaihou_id: {kaihou_id}\n"
+        f"kind: {kind}\n"
+        "---\n\n"
+        f"{body}"
+    )
+
+
 def test_scan_vault_creates_one_pending_review_per_new_file(tmp_path):
-    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nHome base.\n")
-    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Scar.md", "# Scar\n\n## Overview\nA deserter.\n")
+    _write(
+        tmp_path,
+        "Lore/World_of_Rokugan/Locations/Kani.md",
+        _record(uuid4(), "location", "# Kanigakure\n\n## Overview\nHome base.\n"),
+    )
+    _write(
+        tmp_path,
+        "Lore/World_of_Rokugan/Locations/Scar.md",
+        _record(uuid4(), "npc", "# Scar\n\n## Overview\nA deserter.\n"),
+    )
+    # Prose without kaihou-record frontmatter is contextual overlay: scanned,
+    # but it must not spawn a competing Dashboard entity.
+    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Annex.md", "# Annex\n\n## Overview\nNo record.\n")
 
     conn = _connect()
     try:
@@ -238,7 +262,7 @@ def test_scan_vault_creates_one_pending_review_per_new_file(tmp_path):
     finally:
         conn.close()
 
-    assert summary["scanned"] == 2
+    assert summary["scanned"] == 3
     assert summary["new"] == 2
     assert summary["changed"] == 0
     assert summary["unchanged"] == 0
@@ -276,7 +300,11 @@ def test_scan_vault_skips_drafts_and_templates(tmp_path):
 
 
 def test_scan_vault_skips_unreadable_file_and_counts_it_as_error(tmp_path):
-    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nHome base.\n")
+    _write(
+        tmp_path,
+        "Lore/World_of_Rokugan/Locations/Kani.md",
+        _record(uuid4(), "location", "# Kanigakure\n\n## Overview\nHome base.\n"),
+    )
     bad = tmp_path / "Lore" / "World_of_Rokugan" / "Locations" / "Bad.md"
     bad.parent.mkdir(parents=True, exist_ok=True)
     bad.write_bytes(b"\xff\xfe# Bad\n")
@@ -294,7 +322,11 @@ def test_scan_vault_skips_unreadable_file_and_counts_it_as_error(tmp_path):
 
 
 def test_scan_vault_dry_run_creates_no_reviews(tmp_path):
-    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nHome base.\n")
+    _write(
+        tmp_path,
+        "Lore/World_of_Rokugan/Locations/Kani.md",
+        _record(uuid4(), "location", "# Kanigakure\n\n## Overview\nHome base.\n"),
+    )
 
     conn = _connect()
     try:
@@ -311,7 +343,11 @@ def test_scan_vault_dry_run_creates_no_reviews(tmp_path):
 
 
 def test_scan_vault_is_idempotent_for_unchanged_and_pending_sources(tmp_path):
-    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nHome base.\n")
+    _write(
+        tmp_path,
+        "Lore/World_of_Rokugan/Locations/Kani.md",
+        _record(uuid4(), "location", "# Kanigakure\n\n## Overview\nHome base.\n"),
+    )
 
     conn = _connect()
     try:
@@ -361,7 +397,11 @@ def test_scan_vault_reports_changed_and_diffs_sections_against_committed_entity(
     finally:
         conn.close()
 
-    _write(tmp_path, "Lore/World_of_Rokugan/Locations/Kani.md", "# Kanigakure\n\n## Overview\nNew home base.\n")
+    _write(
+        tmp_path,
+        "Lore/World_of_Rokugan/Locations/Kani.md",
+        _record(entity_id, "location", "# Kanigakure\n\n## Overview\nNew home base.\n"),
+    )
 
     conn = _connect()
     try:
@@ -398,7 +438,7 @@ def test_scan_vault_resolves_wikilink_to_already_committed_entity(tmp_path):
     _write(
         tmp_path,
         "Lore/World_of_Rokugan/Locations/Kani.md",
-        "# Kanigakure\n\n## Overview\nHome of [[Scar]].\n",
+        _record(uuid4(), "location", "# Kanigakure\n\n## Overview\nHome of [[Scar]].\n"),
     )
 
     conn = _connect()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 
 import psycopg2
 import psycopg2.extras
@@ -343,11 +344,21 @@ def test_list_assets_filters_by_usage_and_linked_entity():
 # ---- lore/import/scan --------------------------------------------------
 
 
-def test_scan_lore_vault_dry_run_reports_summary_without_writing_reviews(tmp_path, monkeypatch):
+def _write_kani_record(tmp_path):
     (tmp_path / "Lore" / "World_of_Rokugan" / "Locations").mkdir(parents=True)
     (tmp_path / "Lore" / "World_of_Rokugan" / "Locations" / "Kani.md").write_text(
-        "# Kanigakure\n\n## Overview\nHome base.\n", encoding="utf-8"
+        "---\n"
+        "schema: kaihou-record/v1\n"
+        f"kaihou_id: {uuid.uuid4()}\n"
+        "kind: location\n"
+        "---\n\n"
+        "# Kanigakure\n\n## Overview\nHome base.\n",
+        encoding="utf-8",
     )
+
+
+def test_scan_lore_vault_dry_run_reports_summary_without_writing_reviews(tmp_path, monkeypatch):
+    _write_kani_record(tmp_path)
     monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
 
     res = client.post("/api/lore/import/scan?dry_run=true")
@@ -363,10 +374,7 @@ def test_scan_lore_vault_dry_run_reports_summary_without_writing_reviews(tmp_pat
 
 
 def test_scan_lore_vault_creates_job_and_reviews(tmp_path, monkeypatch):
-    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations").mkdir(parents=True)
-    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations" / "Kani.md").write_text(
-        "# Kanigakure\n\n## Overview\nHome base.\n", encoding="utf-8"
-    )
+    _write_kani_record(tmp_path)
     monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
 
     res = client.post("/api/lore/import/scan")
@@ -387,10 +395,7 @@ def test_scan_lore_vault_creates_job_and_reviews(tmp_path, monkeypatch):
 
 
 def test_scan_lore_vault_marks_job_failed_when_scan_raises(tmp_path, monkeypatch):
-    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations").mkdir(parents=True)
-    (tmp_path / "Lore" / "World_of_Rokugan" / "Locations" / "Kani.md").write_text(
-        "# Kanigakure\n\n## Overview\nHome base.\n", encoding="utf-8"
-    )
+    _write_kani_record(tmp_path)
     monkeypatch.setenv("KAIHOU_VAULT_ROOT", str(tmp_path))
 
     def _boom(*args, **kwargs):
