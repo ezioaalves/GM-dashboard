@@ -1050,6 +1050,8 @@ def test_bulk_apply_permanent_failure_leaves_no_orphaned_running_job():
 def test_list_sync_reviews_outstanding_filter_and_search():
     _seed_review(review_type="ticket_import", target_type="ticket", target_id="needs-work", review_status="pending")
     _seed_review(review_type="asset_import", target_type="asset", target_id="waiting", review_status="accepted")
+    # Superseded proposals are history, never inbox work.
+    _seed_review(review_type="vault_import", target_type="entity", target_id="superseded", review_status="stale")
     applied = _seed_review(
         review_type="clock_import", target_type="clock", target_id="Winter Court", review_status="accepted",
     )

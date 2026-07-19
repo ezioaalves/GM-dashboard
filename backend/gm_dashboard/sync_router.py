@@ -906,8 +906,11 @@ def list_sync_reviews(
                 conditions.append("target_type = %s")
                 params.append(target_type)
             if outstanding:
+                # 'stale' is excluded: importers mark superseded proposals
+                # stale when a newer review replaces them, so they are
+                # history, not actionable inbox work.
                 conditions.append(
-                    "(review_status IN ('pending', 'conflict', 'stale')"
+                    "(review_status IN ('pending', 'conflict')"
                     " OR (review_status IN ('accepted', 'merged') AND applied_at IS NULL))"
                 )
             if q:

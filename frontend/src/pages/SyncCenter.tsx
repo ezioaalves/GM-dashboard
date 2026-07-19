@@ -10,7 +10,7 @@ import {
 } from "../api/sync";
 import type { SyncReview } from "../types/sync";
 
-type Filter = "attention" | "conflict" | "pending" | "stale" | "decided" | "history";
+type Filter = "attention" | "conflict" | "pending" | "decided" | "history";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   conflict: { label: "CONFLICT", cls: "conflict" },
@@ -281,7 +281,6 @@ export function SyncCenter() {
     attention: reviews.length,
     conflict: reviews.filter((r) => r.review_status === "conflict").length,
     pending: reviews.filter((r) => r.review_status === "pending").length,
-    stale: reviews.filter((r) => r.review_status === "stale").length,
     decided: reviews.filter(
       (r) => ["accepted", "merged"].includes(r.review_status) && !r.applied_at,
     ).length,
@@ -302,7 +301,6 @@ export function SyncCenter() {
     { key: "attention", label: "Needs attention" },
     { key: "conflict", label: "Conflict", dot: "var(--red-bright)" },
     { key: "pending", label: "Pending", dot: "var(--amber-bright)" },
-    { key: "stale", label: "Stale", dot: "var(--azure)" },
     { key: "decided", label: "Accepted, not yet applied", dot: "var(--text-faint)" },
     { key: "history", label: "History" },
   ];
